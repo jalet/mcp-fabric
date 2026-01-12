@@ -1,0 +1,96 @@
+apiVersion: fabric.jarsater.ai/v1alpha1
+kind: Tool
+metadata:
+  name: string-tools
+  namespace: mcp-fabric-agents
+  labels:
+    app.kubernetes.io/component: tool
+    domain: utilities
+spec:
+  # OCI image containing the @tool decorated Python functions
+  image: ghcr.io/jarsater/string-tools:latest
+  imagePullPolicy: IfNotPresent
+
+  # Python module path to import
+  entryModule: string_tools
+
+  # Tool declarations (optional - can be discovered at runtime)
+  tools:
+    - name: reverse_string
+      description: Reverse a string
+      inputSchema:
+        type: object
+        properties:
+          text:
+            type: string
+            description: The string to reverse
+        required:
+          - text
+
+    - name: word_count
+      description: Count words and characters in text
+      inputSchema:
+        type: object
+        properties:
+          text:
+            type: string
+            description: The text to analyze
+        required:
+          - text
+
+    - name: to_case
+      description: Convert text to a different case (upper, lower, title, capitalize, swapcase)
+      inputSchema:
+        type: object
+        properties:
+          text:
+            type: string
+            description: The text to convert
+          case:
+            type: string
+            description: "Target case: upper, lower, title, capitalize, swapcase"
+            default: upper
+        required:
+          - text
+
+    - name: replace_text
+      description: Replace occurrences of a substring
+      inputSchema:
+        type: object
+        properties:
+          text:
+            type: string
+            description: The original text
+          old:
+            type: string
+            description: The substring to find
+          new:
+            type: string
+            description: The replacement string
+          count:
+            type: integer
+            description: Maximum replacements (-1 for all)
+            default: -1
+        required:
+          - text
+          - old
+          - new
+
+    - name: split_text
+      description: Split text by a delimiter
+      inputSchema:
+        type: object
+        properties:
+          text:
+            type: string
+            description: The text to split
+          delimiter:
+            type: string
+            description: The delimiter to split on
+            default: " "
+          max_splits:
+            type: integer
+            description: Maximum number of splits (-1 for unlimited)
+            default: -1
+        required:
+          - text

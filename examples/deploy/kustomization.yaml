@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  # Namespace
+  - namespace.yaml
+  # ConfigMap
+  - configmap.yaml
+  # Tools (deploy first - agents may depend on them)
+  - tools/tool-string-tools.yaml
+  # Agents
+  - agents/agent-engineering-artist.yaml
+  - agents/agent-text-assistant.yaml
+  # Routes
+  - routes/route-default.yaml

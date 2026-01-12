@@ -1,0 +1,112 @@
+# kube-prometheus-stack Helm values for MCP Fabric testing
+# Install with: helm install prometheus prometheus-community/kube-prometheus-stack -n monitoring -f values.yaml
+
+# Prometheus configuration
+prometheus:
+  prometheusSpec:
+    # Scrape ALL ServiceMonitors and PodMonitors regardless of labels
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector: {}
+    podMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}
+    podMonitorNamespaceSelector: {}
+
+    # Scrape interval
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+
+    # Resource limits for testing
+    resources:
+      requests:
+        memory: 400Mi
+        cpu: 100m
+      limits:
+        memory: 1Gi
+        cpu: 500m
+
+    # Retention
+    retention: 24h
+    retentionSize: 5GB
+
+  # Disable Prometheus self-monitoring
+  serviceMonitor:
+    selfMonitor: false
+
+# Grafana configuration
+grafana:
+  enabled: true
+  adminUser: admin
+  adminPassword: mcp-admin
+  persistence:
+    enabled: false
+  serviceMonitor:
+    enabled: false
+  # Disable all default dashboards
+  defaultDashboardsEnabled: false
+  defaultDashboardsTimezone: utc
+  sidecar:
+    dashboards:
+      enabled: true
+      searchNamespace: ALL
+      label: grafana_dashboard
+      labelValue: "1"
+      folderAnnotation: grafana_folder
+      provider:
+        foldersFromFilesStructure: true
+    datasources:
+      enabled: false
+  # Datasources provisioned directly
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          url: http://prometheus-kube-prometheus-prometheus.monitoring:9090/
+          access: proxy
+          isDefault: true
+          jsonData:
+            httpMethod: POST
+            timeInterval: 15s
+
+# Alertmanager - disabled
+alertmanager:
+  enabled: false
+
+# Disable all default ServiceMonitors - we only want MCP Fabric metrics
+kubeApiServer:
+  enabled: false
+kubelet:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+coreDns:
+  enabled: false
+kubeEtcd:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+# Node exporter - disabled
+nodeExporter:
+  enabled: false
+
+# kube-state-metrics - disabled
+kubeStateMetrics:
+  enabled: false
+
+# Prometheus Operator
+prometheusOperator:
+  enabled: true
+  serviceMonitor:
+    selfMonitor: false
+  resources:
+    requests:
+      memory: 100Mi
+      cpu: 50m
+    limits:
+      memory: 200Mi
+      cpu: 200m

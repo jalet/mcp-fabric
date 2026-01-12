@@ -1,0 +1,70 @@
+apiVersion: fabric.jarsater.ai/v1alpha1
+kind: Route
+metadata:
+  name: default-routes
+  namespace: mcp-fabric-gateway
+  labels:
+    app.kubernetes.io/component: route
+spec:
+  # Routing rules (evaluated by priority, descending)
+  rules:
+    # ===================
+    # Explicit agent routing (priority 100)
+    # ===================
+    - name: explicit-engineering-artist
+      priority: 100
+      match:
+        agent: engineering-artist
+      backends:
+        - agentRef:
+            name: engineering-artist
+            namespace: mcp-fabric-agents
+          weight: 100
+
+    - name: explicit-text-assistant
+      priority: 100
+      match:
+        agent: text-assistant
+      backends:
+        - agentRef:
+            name: text-assistant
+            namespace: mcp-fabric-agents
+          weight: 100
+
+    # ===================
+    # Intent-based routing (priority 40-50)
+    # ===================
+
+    # Diagram creation -> engineering-artist
+    - name: diagram-intent
+      priority: 48
+      match:
+        intentRegex: "(?i)(diagram|draw|visual|flowchart|architecture.?diagram|sequence.?diagram|network.?diagram|draw\\.?io|drawio)"
+      backends:
+        - agentRef:
+            name: engineering-artist
+            namespace: mcp-fabric-agents
+          weight: 100
+
+  # Default configuration
+  defaults:
+    # Default backend when no rules match
+    backend:
+      agentRef:
+        name: default
+        namespace: mcp-fabric-agents
+      weight: 100
+
+    # Circuit breaker settings
+    circuitBreaker:
+      maxConcurrent: 100
+      maxQueueSize: 50
+      queueTimeout: 30s
+      requestTimeout: 5m
+
+    # Return 404 for unmatched requests instead of using default
+    rejectUnmatched: false
+
+  # Gateway selector (for multi-gateway setups)
+  gatewaySelector:
+    app.kubernetes.io/name: agent-gateway

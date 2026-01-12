@@ -1,0 +1,29 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: mcp-fabric-agents
+  namespace: mcp-fabric-system
+  labels:
+    app.kubernetes.io/name: mcp-fabric-agents
+    app.kubernetes.io/component: agents
+spec:
+  namespaceSelector:
+    any: true
+  selector:
+    matchLabels:
+      app.kubernetes.io/managed-by: mcp-fabric-operator
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scheme: http
+      # Copy pod labels to metric labels for model metadata
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_label_fabric_jarsater_ai_agent]
+          targetLabel: agent
+        - sourceLabels: [__meta_kubernetes_pod_label_fabric_jarsater_ai_provider]
+          targetLabel: provider
+        - sourceLabels: [__meta_kubernetes_pod_label_fabric_jarsater_ai_model_id]
+          targetLabel: model_id
+        - sourceLabels: [__meta_kubernetes_pod_label_fabric_jarsater_ai_prompt_hash]
+          targetLabel: prompt_hash

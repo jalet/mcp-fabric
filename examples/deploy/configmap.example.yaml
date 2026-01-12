@@ -1,0 +1,23 @@
+---
+# Example AWS Bedrock credentials secret
+# IMPORTANT: This is a template. Replace placeholder values with your actual credentials.
+# Never commit real credentials to version control.
+#
+# To create this secret with real values:
+#   kubectl create secret generic aws-bedrock-credentials \
+#     --from-literal=AWS_REGION=eu-north-1 \
+#     --from-literal=AWS_ACCESS_KEY_ID=your-access-key-id \
+#     --from-literal=AWS_SECRET_ACCESS_KEY=your-secret-access-key
+#     --from-literal=AWS_SESSION_TOKEN=your-session-token
+#
+#
+apiVersion: v1
+kind: Secret
+metadata:
+  name: aws-bedrock-credentials
+  namespace: mcp-fabric-agents
+type: Opaque
+stringData:
+  AWS_ACCESS_KEY_ID: "your-access-key-id"
+  AWS_SECRET_ACCESS_KEY: "your-secret-access-key"
+  AWS_SESSION_TOKEN: "your-session-token"

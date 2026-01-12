@@ -1,0 +1,671 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.0
+  name: agents.fabric.jarsater.ai
+spec:
+  group: fabric.jarsater.ai
+  names:
+    kind: Agent
+    listKind: AgentList
+    plural: agents
+    shortNames:
+    - ag
+    singular: agent
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: Agent ready
+      jsonPath: .status.ready
+      name: Ready
+      type: boolean
+    - description: Available replicas
+      jsonPath: .status.availableReplicas
+      name: Replicas
+      type: integer
+    - description: Service endpoint
+      jsonPath: .status.endpoint
+      name: Endpoint
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Agent declares a Strands AI agent with tools and MCP connections.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: AgentSpec defines the desired state of Agent.
+            properties:
+              env:
+                description: |-
+                  Env sets environment variables directly in the agent container.
+                  Use for non-secret values like AWS_DEFAULT_REGION.
+                items:
+                  description: EnvVar represents an environment variable present in
+                    a Container.
+                  properties:
+                    name:
+                      description: Name of the environment variable. Must be a C_IDENTIFIER.
+                      type: string
+                    value:
+                      description: |-
+                        Variable references $(VAR_NAME) are expanded
+                        using the previously defined environment variables in the container and
+                        any service environment variables. If a variable cannot be resolved,
+                        the reference in the input string will be unchanged. Double $$ are reduced
+                        to a single $, which allows for escaping the $(VAR_NAME) syntax: i.e.
+                        "$$(VAR_NAME)" will produce the string literal "$(VAR_NAME)".
+                        Escaped references will never be expanded, regardless of whether the variable
+                        exists or not.
+                        Defaults to "".
+                      type: string
+                    valueFrom:
+                      description: Source for the environment variable's value. Cannot
+                        be used if value is not empty.
+                      properties:
+                        configMapKeyRef:
+                          description: Selects a key of a ConfigMap.
+                          properties:
+                            key:
+                              description: The key to select.
+                              type: string
+                            name:
+                              default: ""
+                              description: |-
+                                Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
+                                More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              type: string
+                            optional:
+                              description: Specify whether the ConfigMap or its key
+                                must be defined
+                              type: boolean
+                          required:
+                          - key
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        fieldRef:
+                          description: |-
+                            Selects a field of the pod: supports metadata.name, metadata.namespace, `metadata.labels['<KEY>']`, `metadata.annotations['<KEY>']`,
+                            spec.nodeName, spec.serviceAccountName, status.hostIP, status.podIP, status.podIPs.
+                          properties:
+                            apiVersion:
+                              description: Version of the schema the FieldPath is
+                                written in terms of, defaults to "v1".
+                              type: string
+                            fieldPath:
+                              description: Path of the field to select in the specified
+                                API version.
+                              type: string
+                          required:
+                          - fieldPath
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        resourceFieldRef:
+                          description: |-
+                            Selects a resource of the container: only resources limits and requests
+                            (limits.cpu, limits.memory, limits.ephemeral-storage, requests.cpu, requests.memory and requests.ephemeral-storage) are currently supported.
+                          properties:
+                            containerName:
+                              description: 'Container name: required for volumes,
+                                optional for env vars'
+                              type: string
+                            divisor:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              description: Specifies the output format of the exposed
+                                resources, defaults to "1"
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            resource:
+                              description: 'Required: resource to select'
+                              type: string
+                          required:
+                          - resource
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        secretKeyRef:
+                          description: Selects a key of a secret in the pod's namespace
+                          properties:
+                            key:
+                              description: The key of the secret to select from.  Must
+                                be a valid secret key.
+                              type: string
+                            name:
+                              default: ""
+                              description: |-
+                                Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
+                                More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              type: string
+                            optional:
+                              description: Specify whether the Secret or its key must
+                                be defined
+                              type: boolean
+                          required:
+                          - key
+                          type: object
+                          x-kubernetes-map-type: atomic
+                      type: object
+                  required:
+                  - name
+                  type: object
+                type: array
+              envFrom:
+                description: |-
+                  EnvFrom sources environment variables from Secrets or ConfigMaps.
+                  Use this to inject credentials (e.g., AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY).
+                items:
+                  description: EnvFromSource represents the source of a set of ConfigMaps
+                    or Secrets
+                  properties:
+                    configMapRef:
+                      description: The ConfigMap to select from
+                      properties:
+                        name:
+                          default: ""
+                          description: |-
+                            Name of the referent.
+                            This field is effectively required, but due to backwards compatibility is
+                            allowed to be empty. Instances of this type with an empty value here are
+                            almost certainly wrong.
+                            More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                          type: string
+                        optional:
+                          description: Specify whether the ConfigMap must be defined
+                          type: boolean
+                      type: object
+                      x-kubernetes-map-type: atomic
+                    prefix:
+                      description: Optional text to prepend to the name of each environment
+                        variable. Must be a C_IDENTIFIER.
+                      type: string
+                    secretRef:
+                      description: The Secret to select from
+                      properties:
+                        name:
+                          default: ""
+                          description: |-
+                            Name of the referent.
+                            This field is effectively required, but due to backwards compatibility is
+                            allowed to be empty. Instances of this type with an empty value here are
+                            almost certainly wrong.
+                            More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                          type: string
+                        optional:
+                          description: Specify whether the Secret must be defined
+                          type: boolean
+                      type: object
+                      x-kubernetes-map-type: atomic
+                  type: object
+                type: array
+              image:
+                description: Image overrides the default strands-agent-runner image.
+                type: string
+              mcpSelector:
+                description: MCPSelector selects MCPServer resources to connect to.
+                properties:
+                  labelSelector:
+                    description: LabelSelector matches MCPServer resources.
+                    properties:
+                      matchExpressions:
+                        description: matchExpressions is a list of label selector
+                          requirements. The requirements are ANDed.
+                        items:
+                          description: |-
+                            A label selector requirement is a selector that contains values, a key, and an operator that
+                            relates the key and values.
+                          properties:
+                            key:
+                              description: key is the label key that the selector
+                                applies to.
+                              type: string
+                            operator:
+                              description: |-
+                                operator represents a key's relationship to a set of values.
+                                Valid operators are In, NotIn, Exists and DoesNotExist.
+                              type: string
+                            values:
+                              description: |-
+                                values is an array of string values. If the operator is In or NotIn,
+                                the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                the values array must be empty. This array is replaced during a strategic
+                                merge patch.
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          required:
+                          - key
+                          - operator
+                          type: object
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      matchLabels:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                          map is equivalent to an element of matchExpressions, whose key field is "key", the
+                          operator is "In", and the values array contains only "value". The requirements are ANDed.
+                        type: object
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  namespaces:
+                    description: Namespaces to search for MCPServers (empty means
+                      agent namespace only).
+                    items:
+                      type: string
+                    type: array
+                type: object
+              model:
+                description: Model configures the LLM backend.
+                properties:
+                  endpoint:
+                    description: Endpoint overrides the default provider endpoint.
+                    type: string
+                  maxTokens:
+                    description: MaxTokens limits response length.
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  modelId:
+                    description: ModelID is the model identifier (e.g., "claude-sonnet-4-20250514").
+                    minLength: 1
+                    type: string
+                  provider:
+                    description: Provider is the model provider (e.g., "anthropic",
+                      "openai", "bedrock").
+                    minLength: 1
+                    type: string
+                  temperature:
+                    description: Temperature controls randomness (0.0-1.0).
+                    type: number
+                required:
+                - modelId
+                - provider
+                type: object
+              network:
+                description: Network defines egress rules.
+                properties:
+                  allowModelProvider:
+                    default: true
+                    description: AllowModelProvider automatically allows egress to
+                      the model provider endpoint.
+                    type: boolean
+                  allowObjectStore:
+                    default: false
+                    description: AllowObjectStore automatically allows egress to the
+                      configured object store.
+                    type: boolean
+                  allowedCidrs:
+                    description: AllowedCIDRs lists CIDR blocks the agent can connect
+                      to.
+                    items:
+                      type: string
+                    type: array
+                  allowedFqdns:
+                    description: AllowedFQDNs lists FQDNs the agent can connect to.
+                    items:
+                      type: string
+                    type: array
+                type: object
+              nodeSelector:
+                additionalProperties:
+                  type: string
+                description: NodeSelector for pod scheduling.
+                type: object
+              policy:
+                description: Policy defines runtime constraints.
+                properties:
+                  maxConcurrentRequests:
+                    default: 10
+                    description: MaxConcurrentRequests limits parallel request processing.
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  maxToolCalls:
+                    default: 50
+                    description: MaxToolCalls limits total tool invocations per request.
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  requestTimeout:
+                    default: 5m
+                    description: RequestTimeout is the maximum duration for a single
+                      request.
+                    type: string
+                  toolTimeout:
+                    default: 30s
+                    description: ToolTimeout is the maximum duration for a single
+                      tool call.
+                    type: string
+                type: object
+              prompt:
+                description: Prompt is the system instruction/persona for the agent.
+                minLength: 1
+                type: string
+              replicas:
+                default: 1
+                description: Replicas is the number of agent pods.
+                format: int32
+                minimum: 0
+                type: integer
+              resources:
+                description: Resources defines compute resource requirements.
+                properties:
+                  claims:
+                    description: |-
+                      Claims lists the names of resources, defined in spec.resourceClaims,
+                      that are used by this container.
+
+                      This is an alpha field and requires enabling the
+                      DynamicResourceAllocation feature gate.
+
+                      This field is immutable. It can only be set for containers.
+                    items:
+                      description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                      properties:
+                        name:
+                          description: |-
+                            Name must match the name of one entry in pod.spec.resourceClaims of
+                            the Pod where this field is used. It makes that resource available
+                            inside a container.
+                          type: string
+                        request:
+                          description: |-
+                            Request is the name chosen for a request in the referenced claim.
+                            If empty, everything from the claim is made available, otherwise
+                            only the result of this request.
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                  limits:
+                    additionalProperties:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    description: |-
+                      Limits describes the maximum amount of compute resources allowed.
+                      More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                    type: object
+                  requests:
+                    additionalProperties:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    description: |-
+                      Requests describes the minimum amount of compute resources required.
+                      If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                      otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                      More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                    type: object
+                type: object
+              serviceAccountName:
+                description: |-
+                  ServiceAccountName to use for the agent pods.
+                  If not set, a minimal SA is created.
+                type: string
+              tolerations:
+                description: Tolerations for pod scheduling.
+                items:
+                  description: |-
+                    The pod this Toleration is attached to tolerates any taint that matches
+                    the triple <key,value,effect> using the matching operator <operator>.
+                  properties:
+                    effect:
+                      description: |-
+                        Effect indicates the taint effect to match. Empty means match all taint effects.
+                        When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                      type: string
+                    key:
+                      description: |-
+                        Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                        If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                      type: string
+                    operator:
+                      description: |-
+                        Operator represents a key's relationship to the value.
+                        Valid operators are Exists and Equal. Defaults to Equal.
+                        Exists is equivalent to wildcard for value, so that a pod can
+                        tolerate all taints of a particular category.
+                      type: string
+                    tolerationSeconds:
+                      description: |-
+                        TolerationSeconds represents the period of time the toleration (which must be
+                        of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                        it is not set, which means tolerate the taint forever (do not evict). Zero and
+                        negative values will be treated as 0 (evict immediately) by the system.
+                      format: int64
+                      type: integer
+                    value:
+                      description: |-
+                        Value is the taint value the toleration matches to.
+                        If the operator is Exists, the value should be empty, otherwise just a regular string.
+                      type: string
+                  type: object
+                type: array
+              toolPackages:
+                description: ToolPackages references Tool resources providing tools.
+                items:
+                  description: ToolRef references a Tool and optionally selects specific
+                    tools.
+                  properties:
+                    disabledTools:
+                      description: DisabledTools lists specific tools to disable.
+                      items:
+                        type: string
+                      type: array
+                    enabledTools:
+                      description: EnabledTools lists specific tools to enable (empty
+                        means all).
+                      items:
+                        type: string
+                      type: array
+                    name:
+                      description: Name of the Tool.
+                      type: string
+                    namespace:
+                      description: Namespace of the Tool (defaults to agent namespace).
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+              tools:
+                description: |-
+                  Tools declares MCP tools this agent exposes.
+                  These are used by the gateway for MCP protocol discovery.
+                items:
+                  description: AgentTool declares an MCP tool exposed by this agent.
+                  properties:
+                    description:
+                      description: Description explains what the tool does.
+                      type: string
+                    inputSchema:
+                      description: InputSchema is the JSON Schema for tool parameters.
+                      x-kubernetes-preserve-unknown-fields: true
+                    name:
+                      description: Name is the tool identifier (e.g., "analyze_costs").
+                      minLength: 1
+                      type: string
+                  required:
+                  - description
+                  - name
+                  type: object
+                type: array
+            required:
+            - model
+            - prompt
+            type: object
+          status:
+            description: AgentStatus defines the observed state of Agent.
+            properties:
+              availableReplicas:
+                description: AvailableReplicas is the number of ready pods.
+                format: int32
+                type: integer
+              availableTools:
+                description: |-
+                  AvailableTools lists the MCP tools ready for discovery.
+                  Populated from spec.tools when agent becomes ready.
+                items:
+                  description: AgentTool declares an MCP tool exposed by this agent.
+                  properties:
+                    description:
+                      description: Description explains what the tool does.
+                      type: string
+                    inputSchema:
+                      description: InputSchema is the JSON Schema for tool parameters.
+                      x-kubernetes-preserve-unknown-fields: true
+                    name:
+                      description: Name is the tool identifier (e.g., "analyze_costs").
+                      minLength: 1
+                      type: string
+                  required:
+                  - description
+                  - name
+                  type: object
+                type: array
+              conditions:
+                description: Conditions represent the latest available observations.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              configHash:
+                description: |-
+                  ConfigHash is the hash of the current agent configuration.
+                  Used to trigger rolling updates.
+                type: string
+              endpoint:
+                description: Endpoint is the agent service endpoint (service.namespace.svc.cluster.local:port).
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the last observed generation.
+                format: int64
+                type: integer
+              ready:
+                description: Ready indicates the agent deployment is ready to serve
+                  requests.
+                type: boolean
+              resolvedMcpEndpoints:
+                description: ResolvedMCPEndpoints lists discovered MCP server endpoints.
+                items:
+                  description: ResolvedMCPEndpoint represents a discovered MCP server
+                    endpoint.
+                  properties:
+                    endpoint:
+                      description: Endpoint is the resolved service URL.
+                      type: string
+                    name:
+                      description: Name of the MCPServer resource.
+                      type: string
+                    namespace:
+                      description: Namespace of the MCPServer resource.
+                      type: string
+                    ready:
+                      description: Ready indicates if the MCPServer is ready.
+                      type: boolean
+                  required:
+                  - endpoint
+                  - name
+                  - namespace
+                  - ready
+                  type: object
+                type: array
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

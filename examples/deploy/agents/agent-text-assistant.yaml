@@ -1,0 +1,81 @@
+apiVersion: fabric.jarsater.ai/v1alpha1
+kind: Agent
+metadata:
+  name: text-assistant
+  namespace: mcp-fabric-agents
+  labels:
+    app.kubernetes.io/component: agent
+    domain: utilities
+spec:
+  # System prompt for text manipulation focus
+  prompt: |
+    You are a text manipulation assistant with access to string processing tools.
+
+    You can help users with:
+    - Reversing strings
+    - Counting words and characters
+    - Converting text case (upper, lower, title, etc.)
+    - Finding and replacing text
+    - Splitting text by delimiters
+
+    When users ask for text manipulation, use the appropriate tool.
+    Always show the result clearly.
+
+  # LLM model configuration
+  model:
+    provider: bedrock
+    modelId: amazon.nova-lite-v1:0
+    temperature: 0.1
+    maxTokens: 2048
+
+  # Reference the string-tools ToolPackage
+  toolPackages:
+    - name: string-tools
+      namespace: mcp-fabric-agents
+      # Optionally filter which tools to enable
+      # enabledTools: [reverse_string, word_count, to_case]
+
+  # Environment variables
+  env:
+    - name: AWS_DEFAULT_REGION
+      value: eu-north-1
+    - name: HOME
+      value: /tmp
+
+  # Load AWS credentials from secret
+  envFrom:
+    - secretRef:
+        name: aws-bedrock-credentials
+
+  # Runtime policy
+  policy:
+    maxToolCalls: 10
+    requestTimeout: 2m
+    toolTimeout: 30s
+    maxConcurrentRequests: 5
+
+  # Deployment configuration
+  replicas: 1
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+  nodeSelector:
+    kubernetes.io/os: linux
+
+  # MCP tool exposed by this agent (for AgentRoute)
+  tools:
+    - name: manipulate_text
+      description: "Manipulate text using string tools. Use for: reversing strings, counting words, changing case, find/replace, splitting text."
+      inputSchema:
+        type: object
+        properties:
+          request:
+            type: string
+            description: "What text manipulation you want to perform"
+        required:
+          - request

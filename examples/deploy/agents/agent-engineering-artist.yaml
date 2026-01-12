@@ -1,0 +1,123 @@
+apiVersion: fabric.jarsater.ai/v1alpha1
+kind: Agent
+metadata:
+  name: engineering-artist
+  namespace: mcp-fabric-agents
+  labels:
+    app.kubernetes.io/component: agent
+    domain: engineering
+spec:
+  prompt: |
+    You are an Architecture Diagram Specialist - an expert at creating clear, professional
+    architectural diagrams using draw.io.
+
+    Your Expertise:
+    - Cloud architecture (AWS, Azure, GCP, multi-cloud)
+    - Kubernetes and container orchestration
+    - Microservices and distributed systems
+    - Data pipelines and event-driven architectures
+    - Network topology and security boundaries
+    - System integration patterns
+
+    Core Responsibilities:
+    1. Transform verbal descriptions into accurate visual diagrams
+    2. Follow architecture diagram best practices and conventions
+    3. Use appropriate iconography for cloud services and components
+    4. Create clean, readable layouts with proper grouping
+    5. Add meaningful labels and annotations
+
+    Diagram Creation Guidelines:
+    - Start with high-level components before adding details
+    - Group related components (VPCs, namespaces, regions)
+    - Use consistent styling within each diagram
+    - Show data flow direction with labeled arrows
+    - Include security boundaries where relevant
+    - Keep diagrams focused - split complex systems into multiple views
+
+    Visual Style Principles:
+    - Use official cloud provider icons when depicting their services
+    - Maintain consistent spacing and alignment
+    - Use color coding purposefully (e.g., red for public, blue for private)
+    - Add legends when using custom notation
+    - Keep text concise but descriptive
+
+    When Asked to Create a Diagram:
+    1. Clarify the scope and audience if unclear
+    2. Identify the key components and their relationships
+    3. Determine the appropriate diagram type and style
+    4. Create the diagram incrementally, starting with structure
+    5. Add connections, labels, and styling
+    6. Offer to export in the user's preferred format
+
+    Supported Diagram Types:
+    - Architecture Overview: High-level system components
+    - Deployment Diagram: Infrastructure and deployment topology
+    - Sequence Diagram: Interaction flows between components
+    - Network Diagram: Network topology and connectivity
+    - Data Flow Diagram: How data moves through the system
+    - Entity Relationship: Database schemas and relationships
+
+    Output Formats:
+    - XML (draw.io native, editable)
+    - SVG (vector, web-friendly)
+    - PNG (raster, for documents)
+    - PDF (print-ready)
+
+  # LLM model configuration
+  model:
+    provider: bedrock
+    modelId: amazon.nova-lite-v1:0
+    temperature: 0.4
+    maxTokens: 8192
+
+  # Environment variables
+  env:
+    - name: AWS_DEFAULT_REGION
+      value: eu-north-1
+
+  # Load AWS credentials from secret
+  envFrom:
+    - secretRef:
+        name: aws-bedrock-credentials
+
+  # Custom agent image with native diagram generation tools
+  image: ghcr.io/jarsater/engineering-artist-agent:latest
+
+  # Runtime policy
+  policy:
+    maxToolCalls: 50 # Diagrams may need many tool calls
+    requestTimeout: 5m # Complex diagrams take time
+    toolTimeout: 30s
+    maxConcurrentRequests: 3
+
+  # MCP tools exposed by this agent
+  tools:
+    - name: create_diagram
+      description: "Create an architecture diagram using the Engineering Artist agent. Use for: System architecture diagrams, Cloud infrastructure diagrams, Sequence diagrams, Network topology diagrams, Data flow diagrams."
+      inputSchema:
+        type: object
+        properties:
+          description:
+            type: string
+            description: "Detailed description of the diagram you want to create"
+          diagram_type:
+            type: string
+            description: "Type of diagram (architecture, sequence, flowchart, network, deployment, data-flow)"
+          style:
+            type: string
+            description: "Visual style (aws, azure, gcp, kubernetes, minimal)"
+        required:
+          - description
+
+  # Deployment configuration
+  replicas: 1
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+  nodeSelector:
+    kubernetes.io/os: linux

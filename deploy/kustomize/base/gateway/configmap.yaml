@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-gateway-routes
+  namespace: mcp-fabric-gateway
+  labels:
+    app.kubernetes.io/name: agent-gateway
+    app.kubernetes.io/component: routes
+    app.kubernetes.io/part-of: agent-fabric
+data:
+  routes.json: |
+    {
+      "rules": [],
+      "defaults": {
+        "maxConcurrent": 100,
+        "maxQueueSize": 50,
+        "queueTimeoutMs": 30000,
+        "requestTimeoutMs": 300000,
+        "rejectUnmatched": false
+      }
+    }

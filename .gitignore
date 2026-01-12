@@ -1,0 +1,241 @@
+# =============================================================================
+# MCP Fabric .gitignore
+# =============================================================================
+
+# =============================================================================
+# Secrets and Credentials (CRITICAL - Never commit these)
+# =============================================================================
+# Environment files
+.env
+.env.*
+.env.local
+.env.*.local
+*.env
+
+# AWS credentials
+.aws/
+aws-credentials*
+*credentials*.yaml
+*credentials*.json
+
+# API keys and secrets
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.cer
+secrets/
+*secret*.yaml
+*secret*.json
+!*secret*example*
+!*secret*sample*
+
+# Kubernetes secrets (local files)
+**/configmap.yaml
+!**/configmap.example.yaml
+kubeconfig
+kubeconfig.*
+.kube/
+
+# =============================================================================
+# Go
+# =============================================================================
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+dist/
+
+# Test binary
+*.test
+
+# Output of go coverage
+*.out
+coverage.txt
+coverage.html
+
+# Go workspace
+go.work
+go.work.sum
+
+# Dependency directories
+vendor/
+
+# =============================================================================
+# Python
+# =============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# =============================================================================
+# IDE and Editors
+# =============================================================================
+# VS Code
+.vscode/
+*.code-workspace
+
+# JetBrains (GoLand, PyCharm, IntelliJ)
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Vim
+*.swp
+*.swo
+*~
+.netrwhist
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# =============================================================================
+# macOS
+# =============================================================================
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# =============================================================================
+# Linux
+# =============================================================================
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# =============================================================================
+# Windows
+# =============================================================================
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# =============================================================================
+# Kubernetes and Container Tools
+# =============================================================================
+# Kind cluster configs (local)
+kind-config-local.yaml
+
+# Helm
+charts/*.tgz
+*.tgz
+
+# Kustomize build output
+kustomize-build/
+
+# Container image tarballs
+*.tar
+*.tar.gz
+
+# =============================================================================
+# Build and Debug
+# =============================================================================
+# Debug files
+*.log
+*.debug
+debug/
+logs/
+
+# Core dumps
+core
+core.*
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# =============================================================================
+# Documentation Build
+# =============================================================================
+site/
+_site/
+docs/_build/
+
+# =============================================================================
+# Testing
+# =============================================================================
+# Test output
+test-results/
+junit.xml
+report.xml
+
+# Benchmarks
+*.bench
+
+# =============================================================================
+# Nix
+# =============================================================================
+result
+result-*
+
+# =============================================================================
+# Project Specific
+# =============================================================================
+# Local development overrides
+*.local.yaml
+*.local.json
+local/
+
+# Generated CRD manifests (if regenerated)
+# Keep these tracked, but ignore if you want to regenerate
+# operator/config/crd/bases/*.yaml
+
+# Controller-gen output (optional - usually tracked)
+# operator/api/*/zz_generated.deepcopy.go

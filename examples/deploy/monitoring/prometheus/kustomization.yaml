@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# MCP Fabric Prometheus/Grafana Monitoring Stack
+# Deploy with: kubectl kustomize deploy/samples/prometheus --enable-helm | kubectl apply -f -
+
+namespace: monitoring
+
+resources:
+  - configmap.yaml
+
+helmCharts:
+  - name: kube-prometheus-stack
+    repo: https://prometheus-community.github.io/helm-charts
+    version: "80.14.2"
+    releaseName: prometheus
+    namespace: monitoring
+    includeCRDs: true
+    valuesFile: values.yaml
