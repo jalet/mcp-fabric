@@ -24,6 +24,13 @@ spec:
     - create_directory: Create new directories
     - delete_file: Remove files
     - move_file: Move or rename files
+    - git_init: Initialize a git repository
+    - git_status: Check git status
+    - git_add: Stage files for commit
+    - git_commit: Create a commit with a message
+    - git_remote_add: Add a remote repository
+    - git_push: Push commits to a remote
+    - github_create_repo: Create a new GitHub repository
 
     Workflow:
     1. Understand the task and acceptance criteria
@@ -65,10 +72,12 @@ spec:
     - name: WORKSPACE_DIR
       value: /workspace
 
-  # Load AWS credentials from secret
+  # Load credentials from secrets
   envFrom:
     - secretRef:
         name: aws-bedrock-credentials
+    - secretRef:
+        name: github-credentials
 
   # Custom agent image with filesystem tools
   image: ghcr.io/jarsater/code-worker-agent:latest

@@ -16,5 +16,5 @@ resources:
   # Routes
   - routes/route-default.yaml
   # Tasks (example - uncomment to deploy)
-  # - tasks/example-prd-configmap.yaml
-  # - tasks/example-task.yaml
+  - tasks/example-prd-configmap.yaml
+  - tasks/example-task.yaml

@@ -1,53 +1,40 @@
 #!/usr/bin/env python3
-"""Code Worker Agent Server - Strands LLM-powered version.
+"""Code Worker - CLI mode for Job execution.
 
-This agent executes individual tasks from the orchestrator using an LLM:
-1. Receives task with acceptance criteria
-2. Uses LLM to plan and execute changes using filesystem and git tools
-3. Returns structured results with changes and learnings
+This worker runs as a Kubernetes Job:
+1. Reads task configuration from TASK_JSON environment variable
+2. Creates Strands agent with filesystem and git tools
+3. Executes the task using the LLM
+4. Outputs JSON result to stdout
 """
 
 import fnmatch
 import json
+import logging
 import os
 import re
 import shutil
 import subprocess
-import time
-import uuid
+import sys
 from pathlib import Path
 
-import httpx
-from flask import Flask, request, jsonify
 from strands import Agent, tool
 from strands.models import BedrockModel
 
-# Try to use agent_libs if available (injected via init container)
-try:
-    from agent_libs import setup_json_logging, get_logger
-    setup_json_logging()
-    logger = get_logger("code-worker")
-except ImportError:
-    import logging
-    logging.basicConfig(
-        level=logging.DEBUG if os.getenv("DEBUG") else logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
-    logger = logging.getLogger("code-worker")
-
-app = Flask(__name__)
-
 # Configuration
 WORKSPACE_DIR = Path(os.getenv("WORKSPACE_DIR", "/workspace"))
-GIT_USERNAME = os.getenv("GIT_USERNAME", "")
-GIT_TOKEN = os.getenv("GIT_TOKEN", "")
 GIT_AUTHOR_NAME = os.getenv("GIT_AUTHOR_NAME", "MCP Fabric Task")
 GIT_AUTHOR_EMAIL = os.getenv("GIT_AUTHOR_EMAIL", "task@mcp-fabric.local")
 MODEL_ID = os.getenv("MODEL_ID", "amazon.nova-lite-v1:0")
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", "8192"))
 
-# Global agent instance
-agent = None
+# Setup logging to stderr (stdout reserved for JSON result)
+logging.basicConfig(
+    level=logging.DEBUG if os.getenv("DEBUG") else logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    stream=sys.stderr,
+)
+logger = logging.getLogger("code-worker")
 
 SYSTEM_PROMPT = """You are a Code Worker that implements specific tasks assigned by the orchestrator.
 
@@ -525,10 +512,8 @@ def git_commit(message: str) -> str:
 # ==============================================================================
 
 
-def create_agent():
+def create_agent() -> Agent:
     """Create the Strands agent with Bedrock model and tools."""
-    global agent
-
     logger.info(f"Creating Bedrock model: {MODEL_ID}")
     model = BedrockModel(
         model_id=MODEL_ID,
@@ -560,92 +545,135 @@ def create_agent():
     return agent
 
 
-# Initialize on startup
-try:
-    create_agent()
-except Exception as e:
-    logger.error(f"Failed to create agent: {e}")
+def build_task_query(task: dict) -> str:
+    """Build the query string from task configuration."""
+    query_parts = [
+        f"## Task: {task.get('title', 'Unknown Task')}",
+        "",
+        "### Acceptance Criteria:",
+    ]
+
+    for criterion in task.get("acceptanceCriteria", []):
+        query_parts.append(f"- {criterion}")
+
+    if task.get("context"):
+        query_parts.extend([
+            "",
+            "### Additional Context:",
+            task["context"],
+        ])
+
+    query_parts.extend([
+        "",
+        f"This is iteration {task.get('iteration', 1)} of this task.",
+        "",
+        "Please implement this task and respond with a JSON result.",
+    ])
+
+    return "\n".join(query_parts)
 
 
-# ==============================================================================
-# HTTP Endpoints
-# ==============================================================================
+def parse_result(response: str) -> dict:
+    """Parse the result JSON from the agent response."""
+    response_str = str(response)
 
-
-@app.route("/healthz")
-def healthz():
-    """Health check endpoint."""
-    return jsonify({"status": "ok", "agent_ready": agent is not None})
-
-
-@app.route("/invoke", methods=["POST"])
-def invoke():
-    """Handle task execution requests."""
-    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4())[:8])
-    start_time = time.time()
-
-    logger.info(f"[{request_id}] incoming request from {request.remote_addr}")
-
-    if agent is None:
-        logger.error(f"[{request_id}] agent not initialized")
-        return jsonify({
-            "success": False,
-            "error": "Agent not initialized",
-        }), 503
-
-    data = request.get_json() or {}
-    query = data.get("query", "")
-
-    if not query:
-        return jsonify({
-            "success": False,
-            "error": "Missing 'query' field",
-        }), 400
-
-    query_preview = query[:100].replace('\n', ' ') + "..." if len(query) > 100 else query
-    logger.info(f"[{request_id}] query: {query_preview}")
-
-    try:
-        # Invoke the Strands agent
-        logger.info(f"[{request_id}] invoking agent...")
-        response = agent(query)
-
-        elapsed = time.time() - start_time
-        response_str = str(response)
-        response_preview = response_str[:100].replace('\n', ' ') + "..."
-        logger.info(f"[{request_id}] completed in {elapsed:.2f}s, response: {response_preview}")
-
-        # Try to parse JSON from response
-        result = {"response": response_str}
+    # Try to find JSON in the response
+    json_match = re.search(r'\{[^{}]*"passed"[^{}]*\}', response_str, re.DOTALL)
+    if json_match:
         try:
-            # Look for JSON in the response
-            json_match = re.search(r'\{[^{}]*"passed"[^{}]*\}', response_str, re.DOTALL)
-            if json_match:
-                parsed = json.loads(json_match.group())
-                result = parsed
-        except (json.JSONDecodeError, AttributeError):
+            return json.loads(json_match.group())
+        except json.JSONDecodeError:
             pass
 
-        return jsonify({
-            "success": True,
-            "result": result,
-        })
+    # If no valid JSON found, construct a result from the response
+    return {
+        "passed": False,
+        "error": "Could not parse result from agent response",
+        "response": response_str[:1000],
+    }
+
+
+def main():
+    """Main entry point for CLI execution."""
+    logger.info("Starting Code Worker (CLI mode)")
+    logger.info(f"Workspace: {WORKSPACE_DIR}")
+    logger.info(f"Model: {MODEL_ID}")
+
+    # Configure git safe.directory to avoid "dubious ownership" errors
+    # This is needed when workspace PVC is shared across Jobs with different UIDs
+    try:
+        subprocess.run(
+            ["git", "config", "--global", "--add", "safe.directory", str(WORKSPACE_DIR)],
+            capture_output=True,
+            check=True,
+        )
+        logger.info("Configured git safe.directory")
+    except subprocess.CalledProcessError as e:
+        logger.warning(f"Failed to configure git safe.directory: {e}")
+
+    # Configure git to use GitHub CLI for authentication
+    # This enables git push to work with GH_TOKEN environment variable
+    try:
+        subprocess.run(
+            ["gh", "auth", "setup-git"],
+            capture_output=True,
+            check=True,
+        )
+        logger.info("Configured GitHub CLI as git credential helper")
+    except subprocess.CalledProcessError as e:
+        logger.warning(f"Failed to configure GitHub CLI credential helper: {e}")
+
+    # Read task from environment
+    task_json = os.environ.get("TASK_JSON")
+    if not task_json:
+        result = {"passed": False, "error": "No TASK_JSON environment variable provided"}
+        print(json.dumps(result))
+        sys.exit(1)
+
+    try:
+        task = json.loads(task_json)
+    except json.JSONDecodeError as e:
+        result = {"passed": False, "error": f"Invalid TASK_JSON: {e}"}
+        print(json.dumps(result))
+        sys.exit(1)
+
+    logger.info(f"Task: {task.get('title', 'Unknown')}")
+    logger.info(f"Task ID: {task.get('id', 'Unknown')}")
+    logger.info(f"Iteration: {task.get('iteration', 1)}")
+
+    # Create the agent
+    try:
+        agent = create_agent()
+    except Exception as e:
+        result = {"passed": False, "error": f"Failed to create agent: {e}"}
+        print(json.dumps(result))
+        sys.exit(1)
+
+    # Build the query
+    query = build_task_query(task)
+    logger.info(f"Query length: {len(query)} chars")
+
+    # Execute the task
+    try:
+        logger.info("Invoking agent...")
+        response = agent(query)
+        logger.info("Agent completed")
+
+        result = parse_result(response)
+        logger.info(f"Result: passed={result.get('passed', False)}")
+
+        # Output the result as JSON to stdout
+        print(json.dumps(result))
+
+        # Exit with appropriate code
+        sys.exit(0 if result.get("passed") else 1)
 
     except Exception as e:
-        elapsed = time.time() - start_time
-        logger.error(f"[{request_id}] failed after {elapsed:.2f}s: {e}")
-        return jsonify({
-            "success": False,
-            "error": str(e),
-            "result": {
-                "passed": False,
-                "error": str(e),
-            },
-        }), 500
+        logger.error(f"Agent execution failed: {e}")
+        result = {"passed": False, "error": str(e)}
+        print(json.dumps(result))
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    logger.info("Starting Code Worker Agent")
-    logger.info(f"Workspace dir: {WORKSPACE_DIR}")
-    logger.info(f"Model: {MODEL_ID}")
-    app.run(host="0.0.0.0", port=8080)
+    main()
