@@ -3,6 +3,8 @@
 # Image URLs
 AGENT_RUNNER_IMG ?= ghcr.io/jarsater/strands-agent-runner:latest
 ENGINEERING_ARTIST_IMG ?= ghcr.io/jarsater/engineering-artist-agent:latest
+TASK_ORCHESTRATOR_IMG ?= ghcr.io/jarsater/task-orchestrator-agent:latest
+CODE_WORKER_IMG ?= ghcr.io/jarsater/code-worker-agent:latest
 
 .PHONY: all
 all: docker-build
@@ -16,7 +18,7 @@ help: ## Display this help
 ##@ Build
 
 .PHONY: docker-build
-docker-build: docker-build-default docker-build-engineering-artist ## Build all agent images
+docker-build: docker-build-default docker-build-engineering-artist docker-build-task-orchestrator docker-build-code-worker ## Build all agent images
 
 .PHONY: docker-build-default
 docker-build-default: ## Build default agent runner image
@@ -25,3 +27,11 @@ docker-build-default: ## Build default agent runner image
 .PHONY: docker-build-engineering-artist
 docker-build-engineering-artist: ## Build Engineering Artist agent image
 	docker build --load -t $(ENGINEERING_ARTIST_IMG) -f engineering-artist/Dockerfile engineering-artist/
+
+.PHONY: docker-build-task-orchestrator
+docker-build-task-orchestrator: ## Build Task Orchestrator agent image
+	docker build --load -t $(TASK_ORCHESTRATOR_IMG) -f task-orchestrator/Dockerfile task-orchestrator/
+
+.PHONY: docker-build-code-worker
+docker-build-code-worker: ## Build Code Worker agent image
+	docker build --load -t $(CODE_WORKER_IMG) -f code-worker/Dockerfile code-worker/
