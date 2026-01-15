@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: example-prd
+  namespace: mcp-fabric-agents
+  labels:
+    app.kubernetes.io/component: task-config
+data:
+  prd.json: |
+    {
+      "project": "hello-world-api",
+      "branch": "feature/hello-world",
+      "description": "Build a simple Hello World API service",
+      "stories": [
+        {
+          "id": "story-001",
+          "title": "Create project structure",
+          "priority": 1,
+          "passes": false,
+          "acceptanceCriteria": [
+            "Create a src/ directory for source code",
+            "Create a tests/ directory for test files",
+            "Add a README.md with project description"
+          ]
+        },
+        {
+          "id": "story-002",
+          "title": "Implement hello endpoint",
+          "priority": 2,
+          "passes": false,
+          "acceptanceCriteria": [
+            "Create src/main.py with a Flask application",
+            "Implement GET /hello endpoint that returns {'message': 'Hello, World!'}",
+            "Return HTTP 200 status code"
+          ]
+        },
+        {
+          "id": "story-003",
+          "title": "Add name parameter",
+          "priority": 3,
+          "passes": false,
+          "acceptanceCriteria": [
+            "GET /hello?name=Alice returns {'message': 'Hello, Alice!'}",
+            "Default to 'World' if name is not provided",
+            "Handle empty name parameter gracefully"
+          ]
+        },
+        {
+          "id": "story-004",
+          "title": "Add health check endpoint",
+          "priority": 4,
+          "passes": false,
+          "acceptanceCriteria": [
+            "Implement GET /health endpoint",
+            "Return {'status': 'healthy'} with HTTP 200",
+            "Include uptime in response"
+          ]
+        },
+        {
+          "id": "story-005",
+          "title": "Add unit tests",
+          "priority": 5,
+          "passes": false,
+          "acceptanceCriteria": [
+            "Create tests/test_main.py",
+            "Test /hello endpoint returns correct response",
+            "Test /hello?name=X returns personalized message",
+            "Test /health endpoint returns healthy status"
+          ]
+        }
+      ]
+    }

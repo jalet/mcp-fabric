@@ -1,0 +1,64 @@
+apiVersion: fabric.jarsater.ai/v1alpha1
+kind: Task
+metadata:
+  name: hello-world-implementation
+  namespace: mcp-fabric-agents
+  labels:
+    app.kubernetes.io/component: task
+spec:
+  # Reference to the orchestrator agent that manages iterations
+  orchestratorRef:
+    name: task-orchestrator
+    namespace: mcp-fabric-agents
+
+  # Reference to the worker agent that implements tasks
+  workerRef:
+    name: code-worker
+    namespace: mcp-fabric-agents
+
+  # Load PRD from ConfigMap
+  taskSource:
+    type: configmap
+    configMapRef:
+      name: example-prd
+      key: prd.json
+
+  # Store progress in a ConfigMap
+  progressTracking:
+    type: configmap
+    configMapRef:
+      name: hello-world-progress
+      key: progress.txt
+
+  # Execution limits
+  limits:
+    maxIterations: 50
+    iterationTimeout: 15m
+    totalTimeout: 4h
+    maxConsecutiveFailures: 3
+
+  # Completion detection
+  completion:
+    signal: "<promise>COMPLETE</promise>"
+    checkInterval: 10s
+
+  # Quality gates to run after each task
+  qualityGates:
+    - name: syntax-check
+      command: ["python", "-m", "py_compile", "src/main.py"]
+      failurePolicy: Fail
+      timeout: 30s
+    - name: unit-tests
+      command: ["python", "-m", "pytest", "tests/", "-v"]
+      failurePolicy: Fail
+      timeout: 2m
+
+  # Additional context for the orchestrator
+  context: |
+    This is a simple Hello World API project.
+    Use Python with Flask for the web framework.
+    Follow Python best practices and PEP 8 style guidelines.
+    Keep the implementation simple and focused.
+
+  # Start in running state (set to true to pause)
+  paused: false

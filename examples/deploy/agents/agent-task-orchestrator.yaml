@@ -1,0 +1,202 @@
+apiVersion: fabric.jarsater.ai/v1alpha1
+kind: Agent
+metadata:
+  name: task-orchestrator
+  namespace: mcp-fabric-agents
+  labels:
+    app.kubernetes.io/component: agent
+    domain: orchestration
+spec:
+  prompt: |
+    You are a Task Orchestrator managing an autonomous development loop following the Ralph pattern.
+
+    Your Purpose:
+    You coordinate the execution of tasks from a PRD (Product Requirements Document) using a worker
+    agent to implement changes and quality gates to validate them.
+
+    Your Workflow:
+    1. Use get_next_task to find the highest-priority incomplete task
+    2. Use dispatch_task to send the task to the worker agent
+    3. Use run_quality_gate for each configured quality check (tests, lint, etc.)
+    4. Use update_task_status to mark the task as passed or failed
+    5. Use append_progress to record learnings for future iterations
+    6. Use check_all_complete to verify if all tasks are done
+
+    Rules:
+    - Only work on ONE task per iteration
+    - Never skip quality gates - all must pass before marking a task as passed
+    - Always record learnings, even for failures (especially for failures!)
+    - Be specific about what changed and why
+    - If a quality gate fails, mark the task as failed and record the error
+
+    Response Format:
+    After completing your workflow, respond with a JSON object:
+    ```json
+    {
+      "taskId": "story-XXX",
+      "taskTitle": "Task description",
+      "passed": true/false,
+      "learnings": "What was learned or changed",
+      "error": "Error message if failed"
+    }
+    ```
+
+    If ALL tasks are complete, include: <promise>COMPLETE</promise>
+
+  # LLM model configuration
+  model:
+    provider: bedrock
+    modelId: amazon.nova-lite-v1:0
+    temperature: 0.3
+    maxTokens: 8192
+
+  # Environment variables
+  env:
+    - name: AWS_DEFAULT_REGION
+      value: eu-north-1
+    - name: WORKSPACE_DIR
+      value: /workspace
+
+  # Load AWS credentials from secret
+  envFrom:
+    - secretRef:
+        name: aws-bedrock-credentials
+
+  # Custom agent image with orchestration tools
+  image: ghcr.io/jarsater/task-orchestrator-agent:latest
+
+  # Runtime policy
+  policy:
+    maxToolCalls: 100  # Complex orchestration may need many tool calls
+    requestTimeout: 30m  # Allow time for full iteration
+    toolTimeout: 5m
+    maxConcurrentRequests: 1  # Single iteration at a time
+
+  # MCP tools exposed by this agent
+  tools:
+    - name: get_next_task
+      description: "Get the next incomplete task from the PRD"
+      inputSchema:
+        type: object
+        properties:
+          prd_json:
+            type: string
+            description: "The PRD JSON content containing the task list"
+        required:
+          - prd_json
+
+    - name: dispatch_task
+      description: "Send a task to the worker agent for execution"
+      inputSchema:
+        type: object
+        properties:
+          task_id:
+            type: string
+            description: "The ID of the task to execute"
+          task_title:
+            type: string
+            description: "The title/description of the task"
+          acceptance_criteria:
+            type: array
+            items:
+              type: string
+            description: "List of acceptance criteria for the task"
+          context:
+            type: string
+            description: "Additional context to pass to the worker"
+        required:
+          - task_id
+          - task_title
+          - acceptance_criteria
+
+    - name: run_quality_gate
+      description: "Execute a quality gate command and return the result"
+      inputSchema:
+        type: object
+        properties:
+          name:
+            type: string
+            description: "Name of the quality gate"
+          command:
+            type: array
+            items:
+              type: string
+            description: "Command and arguments to execute"
+          timeout_seconds:
+            type: integer
+            description: "Timeout in seconds"
+        required:
+          - name
+          - command
+
+    - name: update_task_status
+      description: "Update the status of a task in the PRD"
+      inputSchema:
+        type: object
+        properties:
+          prd_json:
+            type: string
+            description: "The current PRD JSON content"
+          task_id:
+            type: string
+            description: "The ID of the task to update"
+          passed:
+            type: boolean
+            description: "Whether the task passed"
+        required:
+          - prd_json
+          - task_id
+          - passed
+
+    - name: append_progress
+      description: "Append learnings to the progress content"
+      inputSchema:
+        type: object
+        properties:
+          current_progress:
+            type: string
+            description: "The current progress content"
+          task_id:
+            type: string
+            description: "The task ID"
+          task_title:
+            type: string
+            description: "The task title"
+          passed:
+            type: boolean
+            description: "Whether the task passed"
+          learnings:
+            type: string
+            description: "What was learned"
+          changes:
+            type: string
+            description: "Description of changes made"
+        required:
+          - task_id
+          - task_title
+          - passed
+          - learnings
+
+    - name: check_all_complete
+      description: "Check if all tasks in the PRD are complete"
+      inputSchema:
+        type: object
+        properties:
+          prd_json:
+            type: string
+            description: "The PRD JSON content to check"
+        required:
+          - prd_json
+
+  # Deployment configuration
+  replicas: 1
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+  nodeSelector:
+    kubernetes.io/os: linux

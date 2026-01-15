@@ -14,6 +14,7 @@ const (
 	ControllerAgent = "agent"
 	ControllerTool  = "tool"
 	ControllerRoute = "route"
+	ControllerTask  = "task"
 
 	// Result labels
 	ResultSuccess = "success"
@@ -145,6 +146,46 @@ var (
 		},
 		[]string{"name", "namespace"},
 	)
+
+	// TaskInfo provides task metadata (always 1)
+	TaskInfo = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "task_info",
+			Help:      "Task metadata information (value is always 1)",
+		},
+		[]string{"name", "namespace", "phase"},
+	)
+
+	// TaskIteration shows current iteration number
+	TaskIteration = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "task_iteration",
+			Help:      "Current iteration number for the task",
+		},
+		[]string{"name", "namespace"},
+	)
+
+	// TaskCompletedTasks shows completed task count
+	TaskCompletedTasks = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "task_completed_tasks",
+			Help:      "Number of completed tasks",
+		},
+		[]string{"name", "namespace"},
+	)
+
+	// TaskTotalTasks shows total task count
+	TaskTotalTasks = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "task_total_tasks",
+			Help:      "Total number of tasks in the PRD",
+		},
+		[]string{"name", "namespace"},
+	)
 )
 
 func init() {
@@ -162,6 +203,10 @@ func init() {
 		ToolDefinitionsCount,
 		RouteRulesCount,
 		RouteBackendsReady,
+		TaskInfo,
+		TaskIteration,
+		TaskCompletedTasks,
+		TaskTotalTasks,
 	)
 }
 
@@ -232,4 +277,20 @@ func SetRouteMetrics(name, namespace string, rulesCount, backendsReady int) {
 func DeleteRouteMetrics(name, namespace string) {
 	RouteRulesCount.DeleteLabelValues(name, namespace)
 	RouteBackendsReady.DeleteLabelValues(name, namespace)
+}
+
+// SetTaskMetrics updates Task metrics
+func SetTaskMetrics(name, namespace, phase string, iteration, completedTasks, totalTasks int) {
+	TaskInfo.WithLabelValues(name, namespace, phase).Set(1)
+	TaskIteration.WithLabelValues(name, namespace).Set(float64(iteration))
+	TaskCompletedTasks.WithLabelValues(name, namespace).Set(float64(completedTasks))
+	TaskTotalTasks.WithLabelValues(name, namespace).Set(float64(totalTasks))
+}
+
+// DeleteTaskMetrics removes metrics for a deleted Task
+func DeleteTaskMetrics(name, namespace string) {
+	TaskIteration.DeleteLabelValues(name, namespace)
+	TaskCompletedTasks.DeleteLabelValues(name, namespace)
+	TaskTotalTasks.DeleteLabelValues(name, namespace)
+	// Note: TaskInfo has more labels (phase), cannot easily delete
 }
