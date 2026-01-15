@@ -1,48 +1,57 @@
 package controllers
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"strings"
 	"time"
 
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	aiv1alpha1 "github.com/jarsater/mcp-fabric/operator/api/v1alpha1"
 	"github.com/jarsater/mcp-fabric/operator/internal/metrics"
+	"github.com/jarsater/mcp-fabric/operator/internal/render"
 )
 
 const (
 	// Default values for Task limits
-	defaultMaxIterations         = int32(100)
-	defaultIterationTimeout      = 30 * time.Minute
-	defaultTotalTimeout          = 24 * time.Hour
+	defaultMaxIterations          = int32(100)
+	defaultIterationTimeout       = 30 * time.Minute
+	defaultTotalTimeout           = 24 * time.Hour
 	defaultMaxConsecutiveFailures = int32(3)
-	defaultCompletionSignal      = "<promise>COMPLETE</promise>"
-	defaultCheckInterval         = 5 * time.Second
+
+	// Default orchestrator agent name
+	defaultOrchestratorName = "task-orchestrator"
 
 	// Requeue intervals
-	iterationRequeueDelay = 5 * time.Second
-	failureRequeueDelay   = 30 * time.Second
+	jobPollInterval     = 10 * time.Second
+	failureRequeueDelay = 30 * time.Second
+
+	// Marker for orchestrator result in logs
+	orchestratorResultMarker = "ORCHESTRATOR_RESULT:"
+
+	// Finalizer for Task cleanup
+	taskFinalizer = "fabric.jarsater.ai/task-cleanup"
 )
 
 // TaskReconciler reconciles a Task object.
 type TaskReconciler struct {
 	client.Client
-	Scheme     *runtime.Scheme
-	HTTPClient *http.Client
+	Scheme    *runtime.Scheme
+	Clientset *kubernetes.Clientset
 }
 
 // +kubebuilder:rbac:groups=fabric.jarsater.ai,resources=tasks,verbs=get;list;watch;create;update;patch;delete
@@ -51,6 +60,9 @@ type TaskReconciler struct {
 // +kubebuilder:rbac:groups=fabric.jarsater.ai,resources=agents,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=pods/log,verbs=get
 
 // Reconcile handles Task reconciliation.
 func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -67,6 +79,20 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 
 	logger.Info("Reconciling Task", "name", task.Name, "phase", task.Status.Phase)
+
+	// Handle deletion with finalizer
+	if !task.DeletionTimestamp.IsZero() {
+		return r.handleDeletion(ctx, &task)
+	}
+
+	// Add finalizer if not present
+	if !controllerutil.ContainsFinalizer(&task, taskFinalizer) {
+		controllerutil.AddFinalizer(&task, taskFinalizer)
+		if err := r.Update(ctx, &task); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{Requeue: true}, nil
+	}
 
 	// Initialize status if needed
 	if task.Status.Phase == "" {
@@ -95,7 +121,6 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 				return ctrl.Result{}, err
 			}
 		}
-		// Don't requeue while paused
 		return ctrl.Result{}, nil
 	}
 
@@ -105,192 +130,35 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{}, nil
 	}
 
-	// Check limits
-	limits := r.getEffectiveLimits(&task)
+	// Handle based on phase
+	var result ctrl.Result
+	var err error
 
-	// Check max iterations
-	if task.Status.CurrentIteration >= *limits.MaxIterations {
-		task.Status.Phase = aiv1alpha1.TaskPhaseFailed
-		task.Status.Message = fmt.Sprintf("Max iterations reached: %d", *limits.MaxIterations)
-		now := metav1.Now()
-		task.Status.CompletedAt = &now
-		r.setCondition(&task, metav1.Condition{
-			Type:               "Ready",
-			Status:             metav1.ConditionFalse,
-			ObservedGeneration: task.Generation,
-			Reason:             "MaxIterationsReached",
-			Message:            task.Status.Message,
-		})
-		if err := r.Status().Update(ctx, &task); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{}, nil
-	}
-
-	// Check total timeout
-	if task.Status.StartedAt != nil {
-		elapsed := time.Since(task.Status.StartedAt.Time)
-		if elapsed > limits.TotalTimeout.Duration {
-			task.Status.Phase = aiv1alpha1.TaskPhaseFailed
-			task.Status.Message = fmt.Sprintf("Total timeout exceeded: %v", limits.TotalTimeout.Duration)
-			now := metav1.Now()
-			task.Status.CompletedAt = &now
+	switch task.Status.Phase {
+	case aiv1alpha1.TaskPhasePending:
+		result, err = r.handlePendingPhase(ctx, &task)
+	case aiv1alpha1.TaskPhaseRunning:
+		result, err = r.handleRunningPhase(ctx, &task)
+	default:
+		// Re-evaluate paused tasks
+		if task.Status.Phase == aiv1alpha1.TaskPhasePaused && !task.Spec.Paused {
+			task.Status.Phase = aiv1alpha1.TaskPhaseRunning
+			task.Status.ConsecutiveFailures = 0
 			r.setCondition(&task, metav1.Condition{
 				Type:               "Ready",
 				Status:             metav1.ConditionFalse,
 				ObservedGeneration: task.Generation,
-				Reason:             "TotalTimeoutExceeded",
-				Message:            task.Status.Message,
+				Reason:             "Resumed",
+				Message:            "Task resumed from paused state",
 			})
 			if err := r.Status().Update(ctx, &task); err != nil {
 				return ctrl.Result{}, err
 			}
-			return ctrl.Result{}, nil
+			return ctrl.Result{Requeue: true}, nil
 		}
 	}
 
-	// Check consecutive failures
-	if task.Status.ConsecutiveFailures >= *limits.MaxConsecutiveFailures {
-		task.Status.Phase = aiv1alpha1.TaskPhasePaused
-		task.Status.Message = fmt.Sprintf("Paused after %d consecutive failures", task.Status.ConsecutiveFailures)
-		r.setCondition(&task, metav1.Condition{
-			Type:               "Ready",
-			Status:             metav1.ConditionFalse,
-			ObservedGeneration: task.Generation,
-			Reason:             "ConsecutiveFailures",
-			Message:            task.Status.Message,
-		})
-		if err := r.Status().Update(ctx, &task); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{}, nil
-	}
-
-	// Verify orchestrator agent is ready
-	orchestrator, err := r.getAgent(ctx, task.Spec.OrchestratorRef, task.Namespace)
-	if err != nil {
-		logger.Error(err, "Failed to get orchestrator agent")
-		r.setCondition(&task, metav1.Condition{
-			Type:               "Ready",
-			Status:             metav1.ConditionFalse,
-			ObservedGeneration: task.Generation,
-			Reason:             "OrchestratorNotFound",
-			Message:            err.Error(),
-		})
-		if err := r.Status().Update(ctx, &task); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{RequeueAfter: failureRequeueDelay}, nil
-	}
-
-	if !orchestrator.Status.Ready {
-		logger.Info("Orchestrator agent not ready", "agent", orchestrator.Name)
-		r.setCondition(&task, metav1.Condition{
-			Type:               "Ready",
-			Status:             metav1.ConditionFalse,
-			ObservedGeneration: task.Generation,
-			Reason:             "OrchestratorNotReady",
-			Message:            "Waiting for orchestrator agent to be ready",
-		})
-		if err := r.Status().Update(ctx, &task); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{RequeueAfter: failureRequeueDelay}, nil
-	}
-
-	// Load PRD content
-	prdContent, err := r.loadTaskSource(ctx, &task)
-	if err != nil {
-		logger.Error(err, "Failed to load task source")
-		r.setCondition(&task, metav1.Condition{
-			Type:               "Ready",
-			Status:             metav1.ConditionFalse,
-			ObservedGeneration: task.Generation,
-			Reason:             "TaskSourceError",
-			Message:            err.Error(),
-		})
-		if err := r.Status().Update(ctx, &task); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{RequeueAfter: failureRequeueDelay}, nil
-	}
-
-	// Load progress if configured
-	progressContent := ""
-	if task.Spec.ProgressTracking != nil && task.Spec.ProgressTracking.Type == aiv1alpha1.ProgressTrackingTypeConfigMap {
-		progressContent, _ = r.loadProgress(ctx, &task) // Ignore errors, progress may not exist yet
-	}
-
-	// Mark as running if pending
-	if task.Status.Phase == aiv1alpha1.TaskPhasePending {
-		task.Status.Phase = aiv1alpha1.TaskPhaseRunning
-		now := metav1.Now()
-		task.Status.StartedAt = &now
-	}
-
-	// Execute iteration
-	iterationResult := r.executeIteration(ctx, &task, orchestrator, prdContent, progressContent, limits)
-
-	// Update iteration status
-	task.Status.CurrentIteration++
-	now := metav1.Now()
-	task.Status.LastIterationAt = &now
-
-	// Add to recent iterations (keep last 10)
-	task.Status.RecentIterations = append(task.Status.RecentIterations, iterationResult)
-	if len(task.Status.RecentIterations) > 10 {
-		task.Status.RecentIterations = task.Status.RecentIterations[1:]
-	}
-
-	if iterationResult.Passed {
-		task.Status.ConsecutiveFailures = 0
-		task.Status.CompletedTasks++
-		task.Status.LastTaskID = iterationResult.TaskID
-	} else {
-		task.Status.ConsecutiveFailures++
-	}
-
-	// Check for completion signal
-	completionSignal := defaultCompletionSignal
-	if task.Spec.Completion != nil && task.Spec.Completion.Signal != "" {
-		completionSignal = task.Spec.Completion.Signal
-	}
-
-	if strings.Contains(iterationResult.Learnings, completionSignal) {
-		task.Status.Phase = aiv1alpha1.TaskPhaseCompleted
-		task.Status.Message = "All tasks completed successfully"
-		task.Status.CompletedAt = &now
-		r.setCondition(&task, metav1.Condition{
-			Type:               "Ready",
-			Status:             metav1.ConditionTrue,
-			ObservedGeneration: task.Generation,
-			Reason:             "Completed",
-			Message:            "All tasks completed successfully",
-		})
-	} else {
-		r.setCondition(&task, metav1.Condition{
-			Type:               "Ready",
-			Status:             metav1.ConditionFalse,
-			ObservedGeneration: task.Generation,
-			Reason:             "InProgress",
-			Message:            fmt.Sprintf("Iteration %d completed, continuing", task.Status.CurrentIteration),
-		})
-	}
-
-	// Update progress if tracking is enabled
-	if iterationResult.Learnings != "" && task.Spec.ProgressTracking != nil {
-		if err := r.appendProgress(ctx, &task, iterationResult); err != nil {
-			logger.Error(err, "Failed to update progress")
-		}
-	}
-
-	task.Status.ObservedGeneration = task.Generation
-	if err := r.Status().Update(ctx, &task); err != nil {
-		metrics.RecordReconcile(metrics.ControllerTask, metrics.ResultError, time.Since(startTime).Seconds())
-		return ctrl.Result{}, err
-	}
-
-	// Record metrics
+	// Record metrics - track both success and error cases
 	metrics.SetTaskMetrics(
 		task.Name,
 		task.Namespace,
@@ -299,14 +167,578 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		int(task.Status.CompletedTasks),
 		int(task.Status.TotalTasks),
 	)
-	metrics.RecordReconcile(metrics.ControllerTask, metrics.ResultSuccess, time.Since(startTime).Seconds())
-
-	// Requeue for next iteration if still running
-	if task.Status.Phase == aiv1alpha1.TaskPhaseRunning {
-		return ctrl.Result{RequeueAfter: iterationRequeueDelay}, nil
+	if err != nil {
+		metrics.RecordReconcile(metrics.ControllerTask, metrics.ResultError, time.Since(startTime).Seconds())
+	} else {
+		metrics.RecordReconcile(metrics.ControllerTask, metrics.ResultSuccess, time.Since(startTime).Seconds())
 	}
 
+	return result, err
+}
+
+// handlePendingPhase sets up the task and launches the orchestrator Job.
+func (r *TaskReconciler) handlePendingPhase(ctx context.Context, task *aiv1alpha1.Task) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+	logger.Info("Handling pending phase", "task", task.Name)
+
+	// Get orchestrator agent
+	orchestratorAgent, err := r.getOrchestratorAgent(ctx, task)
+	if err != nil {
+		logger.Error(err, "Failed to get orchestrator agent")
+		r.setCondition(task, metav1.Condition{
+			Type:               "Ready",
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: task.Generation,
+			Reason:             "OrchestratorNotFound",
+			Message:            err.Error(),
+		})
+		if err := r.Status().Update(ctx, task); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: failureRequeueDelay}, nil
+	}
+
+	// Get worker agent (needed for endpoint)
+	workerAgent, err := r.getAgent(ctx, task.Spec.WorkerRef, task.Namespace)
+	if err != nil {
+		logger.Error(err, "Failed to get worker agent")
+		r.setCondition(task, metav1.Condition{
+			Type:               "Ready",
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: task.Generation,
+			Reason:             "WorkerNotFound",
+			Message:            err.Error(),
+		})
+		if err := r.Status().Update(ctx, task); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: failureRequeueDelay}, nil
+	}
+
+	// Ensure workspace PVC exists
+	if err := r.reconcileWorkspacePVC(ctx, task); err != nil {
+		logger.Error(err, "Failed to reconcile workspace PVC")
+		return ctrl.Result{RequeueAfter: failureRequeueDelay}, err
+	}
+
+	// Load PRD content
+	prdContent, err := r.loadTaskSource(ctx, task)
+	if err != nil {
+		logger.Error(err, "Failed to load task source")
+		r.setCondition(task, metav1.Condition{
+			Type:               "Ready",
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: task.Generation,
+			Reason:             "TaskSourceError",
+			Message:            err.Error(),
+		})
+		if err := r.Status().Update(ctx, task); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: failureRequeueDelay}, nil
+	}
+
+	// Count total tasks in PRD
+	totalTasks := r.countTasksInPRD(prdContent)
+
+	// Build worker endpoint from agent spec
+	workerEndpoint := r.buildWorkerEndpoint(workerAgent)
+
+	// Create orchestrator Job
+	jobParams := render.OrchestratorJobParams{
+		Task:              task,
+		OrchestratorAgent: orchestratorAgent,
+		WorkerEndpoint:    workerEndpoint,
+		WorkspacePVC:      render.WorkspacePVCName(task),
+		PRD:               prdContent,
+	}
+
+	job, err := render.OrchestratorJob(jobParams)
+	if err != nil {
+		logger.Error(err, "Failed to render orchestrator Job")
+		r.setCondition(task, metav1.Condition{
+			Type:               "Ready",
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: task.Generation,
+			Reason:             "JobRenderError",
+			Message:            err.Error(),
+		})
+		if err := r.Status().Update(ctx, task); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: failureRequeueDelay}, nil
+	}
+
+	// Set controller reference
+	if err := ctrl.SetControllerReference(task, job, r.Scheme); err != nil {
+		logger.Error(err, "Failed to set controller reference on Job")
+		return ctrl.Result{}, err
+	}
+
+	// Create the Job
+	if err := r.Create(ctx, job); err != nil {
+		if !errors.IsAlreadyExists(err) {
+			logger.Error(err, "Failed to create orchestrator Job")
+			return ctrl.Result{RequeueAfter: failureRequeueDelay}, err
+		}
+		logger.Info("Orchestrator Job already exists", "job", job.Name)
+	} else {
+		logger.Info("Created orchestrator Job", "job", job.Name)
+	}
+
+	// Update status to Running
+	now := metav1.Now()
+	task.Status.Phase = aiv1alpha1.TaskPhaseRunning
+	task.Status.StartedAt = &now
+	task.Status.TotalTasks = int32(totalTasks)
+	if task.Spec.Git != nil {
+		task.Status.RepositoryURL = task.Spec.Git.URL
+	}
+	r.setCondition(task, metav1.Condition{
+		Type:               "Ready",
+		Status:             metav1.ConditionFalse,
+		ObservedGeneration: task.Generation,
+		Reason:             "Running",
+		Message:            "Orchestrator Job started",
+	})
+
+	if err := r.Status().Update(ctx, task); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	return ctrl.Result{RequeueAfter: jobPollInterval}, nil
+}
+
+// handleRunningPhase monitors the orchestrator Job and extracts results.
+func (r *TaskReconciler) handleRunningPhase(ctx context.Context, task *aiv1alpha1.Task) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+
+	// Check total timeout
+	limits := r.getEffectiveLimits(task)
+	if task.Status.StartedAt != nil {
+		elapsed := time.Since(task.Status.StartedAt.Time)
+		if elapsed > limits.TotalTimeout.Duration {
+			task.Status.Phase = aiv1alpha1.TaskPhaseFailed
+			task.Status.Message = fmt.Sprintf("Total timeout exceeded: %v", limits.TotalTimeout.Duration)
+			now := metav1.Now()
+			task.Status.CompletedAt = &now
+			r.setCondition(task, metav1.Condition{
+				Type:               "Ready",
+				Status:             metav1.ConditionFalse,
+				ObservedGeneration: task.Generation,
+				Reason:             "TotalTimeoutExceeded",
+				Message:            task.Status.Message,
+			})
+			if err := r.Status().Update(ctx, task); err != nil {
+				return ctrl.Result{}, err
+			}
+			// Cleanup the Job
+			r.cleanupOrchestratorJob(ctx, task)
+			return ctrl.Result{}, nil
+		}
+	}
+
+	// Get orchestrator Job
+	jobName := fmt.Sprintf("%s-orchestrator", task.Name)
+	var job batchv1.Job
+	if err := r.Get(ctx, types.NamespacedName{Name: jobName, Namespace: task.Namespace}, &job); err != nil {
+		if errors.IsNotFound(err) {
+			logger.Info("Orchestrator Job not found, creating", "job", jobName)
+			// Job was deleted or never created, go back to pending
+			task.Status.Phase = aiv1alpha1.TaskPhasePending
+			if err := r.Status().Update(ctx, task); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{Requeue: true}, nil
+		}
+		return ctrl.Result{}, err
+	}
+
+	// Check Job status
+	if job.Status.Succeeded > 0 {
+		logger.Info("Orchestrator Job succeeded", "job", jobName)
+		return r.handleJobSuccess(ctx, task, &job)
+	}
+
+	if job.Status.Failed > 0 {
+		logger.Info("Orchestrator Job failed", "job", jobName)
+		return r.handleJobFailure(ctx, task, &job)
+	}
+
+	// Check for deadline exceeded
+	for _, cond := range job.Status.Conditions {
+		if cond.Type == batchv1.JobFailed && cond.Reason == "DeadlineExceeded" {
+			logger.Info("Orchestrator Job deadline exceeded", "job", jobName)
+			task.Status.Phase = aiv1alpha1.TaskPhaseFailed
+			task.Status.Message = "Orchestrator Job deadline exceeded"
+			now := metav1.Now()
+			task.Status.CompletedAt = &now
+			r.setCondition(task, metav1.Condition{
+				Type:               "Ready",
+				Status:             metav1.ConditionFalse,
+				ObservedGeneration: task.Generation,
+				Reason:             "JobDeadlineExceeded",
+				Message:            task.Status.Message,
+			})
+			if err := r.Status().Update(ctx, task); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{}, nil
+		}
+	}
+
+	// Job still running, requeue to check again
+	logger.V(1).Info("Orchestrator Job still running", "job", jobName)
+	return ctrl.Result{RequeueAfter: jobPollInterval}, nil
+}
+
+// OrchestratorResult represents the result from the orchestrator Job.
+type OrchestratorResult struct {
+	Passed         bool            `json:"passed"`
+	CompletedTasks int             `json:"completedTasks"`
+	TotalTasks     int             `json:"totalTasks"`
+	Iterations     int             `json:"iterations"`
+	Learnings      string          `json:"learnings"`
+	CommitSHA      string          `json:"commitSha"`
+	PullRequestURL string          `json:"pullRequestUrl"`
+	PRD            json.RawMessage `json:"prd"`
+	Error          string          `json:"error"`
+	NoChanges      bool            `json:"noChanges"`
+	Pushed         bool            `json:"pushed"`
+	GitError       string          `json:"gitError"`
+}
+
+// handleJobSuccess processes a successful orchestrator Job.
+func (r *TaskReconciler) handleJobSuccess(ctx context.Context, task *aiv1alpha1.Task, job *batchv1.Job) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+
+	// Extract result from Job logs
+	result, err := r.getOrchestratorResult(ctx, job)
+	if err != nil {
+		logger.Error(err, "Failed to get orchestrator result from logs")
+		// Job succeeded but couldn't extract result - treat as success
+		result = &OrchestratorResult{Passed: true, Learnings: "Job completed but result extraction failed"}
+	}
+
+	// Update task status
+	now := metav1.Now()
+	task.Status.CompletedAt = &now
+	task.Status.CurrentIteration = int32(result.Iterations)
+	task.Status.CompletedTasks = int32(result.CompletedTasks)
+	if result.TotalTasks > 0 {
+		task.Status.TotalTasks = int32(result.TotalTasks)
+	}
+
+	if result.Passed {
+		task.Status.Phase = aiv1alpha1.TaskPhaseCompleted
+		task.Status.Message = "All tasks completed successfully"
+		r.setCondition(task, metav1.Condition{
+			Type:               "Ready",
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: task.Generation,
+			Reason:             "Completed",
+			Message:            task.Status.Message,
+		})
+	} else {
+		task.Status.Phase = aiv1alpha1.TaskPhaseFailed
+		task.Status.Message = "Orchestrator completed but not all tasks passed"
+		if result.Error != "" {
+			task.Status.Message = result.Error
+		}
+		r.setCondition(task, metav1.Condition{
+			Type:               "Ready",
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: task.Generation,
+			Reason:             "PartialCompletion",
+			Message:            task.Status.Message,
+		})
+	}
+
+	// Update git status fields
+	if result.CommitSHA != "" {
+		task.Status.LastCommitSHA = result.CommitSHA
+	}
+	if result.PullRequestURL != "" {
+		task.Status.PullRequestURL = result.PullRequestURL
+	}
+
+	// Add final iteration result
+	iterResult := aiv1alpha1.IterationResult{
+		Iteration:   int32(result.Iterations),
+		Passed:      result.Passed,
+		CompletedAt: &now,
+		Learnings:   result.Learnings,
+	}
+	// Guard against nil StartedAt pointer
+	if task.Status.StartedAt != nil {
+		iterResult.StartedAt = *task.Status.StartedAt
+	} else {
+		iterResult.StartedAt = now
+	}
+	task.Status.RecentIterations = append(task.Status.RecentIterations, iterResult)
+	if len(task.Status.RecentIterations) > 10 {
+		task.Status.RecentIterations = task.Status.RecentIterations[len(task.Status.RecentIterations)-10:]
+	}
+
+	task.Status.ObservedGeneration = task.Generation
+
+	// Update the PRD in source ConfigMap if provided
+	if len(result.PRD) > 0 {
+		if err := r.persistUpdatedPRD(ctx, task, string(result.PRD)); err != nil {
+			logger.Error(err, "Failed to persist updated PRD")
+		}
+	}
+
+	if err := r.Status().Update(ctx, task); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	logger.Info("Task completed",
+		"passed", result.Passed,
+		"completedTasks", result.CompletedTasks,
+		"totalTasks", result.TotalTasks,
+		"prUrl", result.PullRequestURL,
+	)
+
 	return ctrl.Result{}, nil
+}
+
+// handleJobFailure processes a failed orchestrator Job.
+func (r *TaskReconciler) handleJobFailure(ctx context.Context, task *aiv1alpha1.Task, job *batchv1.Job) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+
+	// Try to extract any result from logs
+	result, _ := r.getOrchestratorResult(ctx, job)
+
+	now := metav1.Now()
+	task.Status.Phase = aiv1alpha1.TaskPhaseFailed
+	task.Status.CompletedAt = &now
+	task.Status.Message = "Orchestrator Job failed"
+
+	if result != nil {
+		task.Status.CurrentIteration = int32(result.Iterations)
+		task.Status.CompletedTasks = int32(result.CompletedTasks)
+		if result.Error != "" {
+			task.Status.Message = result.Error
+		}
+		if result.CommitSHA != "" {
+			task.Status.LastCommitSHA = result.CommitSHA
+		}
+	}
+
+	r.setCondition(task, metav1.Condition{
+		Type:               "Ready",
+		Status:             metav1.ConditionFalse,
+		ObservedGeneration: task.Generation,
+		Reason:             "JobFailed",
+		Message:            task.Status.Message,
+	})
+
+	task.Status.ObservedGeneration = task.Generation
+	if err := r.Status().Update(ctx, task); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	logger.Info("Task failed", "message", task.Status.Message)
+	return ctrl.Result{}, nil
+}
+
+// getOrchestratorResult extracts the result from orchestrator Job logs.
+func (r *TaskReconciler) getOrchestratorResult(ctx context.Context, job *batchv1.Job) (*OrchestratorResult, error) {
+	if r.Clientset == nil {
+		return nil, fmt.Errorf("kubernetes clientset not available")
+	}
+
+	// Find the pod for this Job
+	var podList corev1.PodList
+	if err := r.List(ctx, &podList, client.InNamespace(job.Namespace), client.MatchingLabels{
+		"job-name": job.Name,
+	}); err != nil {
+		return nil, fmt.Errorf("failed to list Job pods: %w", err)
+	}
+
+	if len(podList.Items) == 0 {
+		return nil, fmt.Errorf("no pods found for Job %s", job.Name)
+	}
+
+	// Get logs from the orchestrator container
+	pod := podList.Items[0]
+	req := r.Clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
+		Container: "orchestrator",
+	})
+
+	logs, err := req.Stream(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pod logs: %w", err)
+	}
+	defer logs.Close()
+
+	logBytes, err := io.ReadAll(logs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read pod logs: %w", err)
+	}
+
+	logStr := string(logBytes)
+
+	// Look for the orchestrator result marker
+	idx := strings.LastIndex(logStr, orchestratorResultMarker)
+	if idx == -1 {
+		return nil, fmt.Errorf("orchestrator result marker not found in logs")
+	}
+
+	// Extract the JSON after the marker
+	jsonStart := idx + len(orchestratorResultMarker)
+	jsonStr := logStr[jsonStart:]
+
+	// Find the end of the JSON (first newline or end of string)
+	if newlineIdx := strings.Index(jsonStr, "\n"); newlineIdx != -1 {
+		jsonStr = jsonStr[:newlineIdx]
+	}
+
+	var result OrchestratorResult
+	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
+		return nil, fmt.Errorf("failed to parse orchestrator result: %w", err)
+	}
+
+	return &result, nil
+}
+
+// cleanupOrchestratorJob deletes the orchestrator Job.
+func (r *TaskReconciler) cleanupOrchestratorJob(ctx context.Context, task *aiv1alpha1.Task) {
+	jobName := fmt.Sprintf("%s-orchestrator", task.Name)
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobName,
+			Namespace: task.Namespace,
+		},
+	}
+	_ = r.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationBackground))
+}
+
+// handleDeletion handles Task deletion by cleaning up owned resources.
+func (r *TaskReconciler) handleDeletion(ctx context.Context, task *aiv1alpha1.Task) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+
+	if !controllerutil.ContainsFinalizer(task, taskFinalizer) {
+		// Finalizer already removed, nothing to do
+		return ctrl.Result{}, nil
+	}
+
+	logger.Info("Handling Task deletion, cleaning up resources", "task", task.Name)
+
+	// Clean up orchestrator Job
+	r.cleanupOrchestratorJob(ctx, task)
+
+	// Clean up workspace PVC
+	pvcName := render.WorkspacePVCName(task)
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pvcName,
+			Namespace: task.Namespace,
+		},
+	}
+	if err := r.Delete(ctx, pvc); err != nil && !errors.IsNotFound(err) {
+		logger.Error(err, "Failed to delete workspace PVC", "pvc", pvcName)
+		// Continue with cleanup even if PVC deletion fails
+	}
+
+	// Clean up progress ConfigMap if using configmap progress tracking
+	if task.Spec.ProgressTracking != nil &&
+		task.Spec.ProgressTracking.Type == aiv1alpha1.ProgressTrackingTypeConfigMap &&
+		task.Spec.ProgressTracking.ConfigMapRef != nil {
+		cm := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      task.Spec.ProgressTracking.ConfigMapRef.Name,
+				Namespace: task.Namespace,
+			},
+		}
+		if err := r.Delete(ctx, cm); err != nil && !errors.IsNotFound(err) {
+			logger.Error(err, "Failed to delete progress ConfigMap", "configMap", cm.Name)
+			// Continue with cleanup even if ConfigMap deletion fails
+		}
+	}
+
+	// Remove finalizer
+	controllerutil.RemoveFinalizer(task, taskFinalizer)
+	if err := r.Update(ctx, task); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Clean up metrics
+	metrics.DeleteTaskMetrics(task.Name, task.Namespace)
+
+	logger.Info("Task cleanup completed", "task", task.Name)
+	return ctrl.Result{}, nil
+}
+
+// ==============================================================================
+// Helper Functions
+// ==============================================================================
+
+// getOrchestratorAgent gets the orchestrator agent for the task.
+func (r *TaskReconciler) getOrchestratorAgent(ctx context.Context, task *aiv1alpha1.Task) (*aiv1alpha1.Agent, error) {
+	ref := task.Spec.OrchestratorRef
+	if ref == nil {
+		// Use default orchestrator
+		ref = &aiv1alpha1.AgentReference{
+			Name:      defaultOrchestratorName,
+			Namespace: task.Namespace,
+		}
+	}
+	return r.getAgent(ctx, *ref, task.Namespace)
+}
+
+// getAgent retrieves an Agent by reference.
+func (r *TaskReconciler) getAgent(ctx context.Context, ref aiv1alpha1.AgentReference, defaultNS string) (*aiv1alpha1.Agent, error) {
+	ns := ref.Namespace
+	if ns == "" {
+		ns = defaultNS
+	}
+
+	var agent aiv1alpha1.Agent
+	if err := r.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: ns}, &agent); err != nil {
+		return nil, err
+	}
+
+	return &agent, nil
+}
+
+// buildWorkerEndpoint builds the worker HTTP endpoint from agent spec.
+func (r *TaskReconciler) buildWorkerEndpoint(agent *aiv1alpha1.Agent) string {
+	// Build endpoint from agent name and namespace
+	// Format: http://{name}.{namespace}:8080
+	// Using default port 8080 as agents expose this port
+	return fmt.Sprintf("http://%s.%s:8080", agent.Name, agent.Namespace)
+}
+
+// PRDDocument represents the structure of a PRD JSON document.
+type PRDDocument struct {
+	Tasks []struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	} `json:"tasks"`
+	// Alternative structure: some PRDs may use "stories" instead of "tasks"
+	Stories []struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	} `json:"stories"`
+}
+
+// countTasksInPRD counts the total number of tasks in the PRD using proper JSON parsing.
+func (r *TaskReconciler) countTasksInPRD(prdContent string) int {
+	var prd PRDDocument
+	if err := json.Unmarshal([]byte(prdContent), &prd); err != nil {
+		// If JSON parsing fails, return 0 (unknown task count)
+		return 0
+	}
+
+	// Check both "tasks" and "stories" fields for flexibility
+	taskCount := len(prd.Tasks)
+	if taskCount == 0 {
+		taskCount = len(prd.Stories)
+	}
+
+	return taskCount
 }
 
 // getEffectiveLimits returns the limits with defaults applied.
@@ -338,19 +770,28 @@ func (r *TaskReconciler) getEffectiveLimits(task *aiv1alpha1.Task) *aiv1alpha1.T
 	return limits
 }
 
-// getAgent retrieves an Agent by reference.
-func (r *TaskReconciler) getAgent(ctx context.Context, ref aiv1alpha1.AgentReference, defaultNS string) (*aiv1alpha1.Agent, error) {
-	ns := ref.Namespace
-	if ns == "" {
-		ns = defaultNS
+// reconcileWorkspacePVC ensures the workspace PVC exists.
+func (r *TaskReconciler) reconcileWorkspacePVC(ctx context.Context, task *aiv1alpha1.Task) error {
+	pvc := render.TaskWorkspacePVC(task)
+
+	// Set controller reference
+	if err := ctrl.SetControllerReference(task, pvc, r.Scheme); err != nil {
+		return fmt.Errorf("failed to set controller reference: %w", err)
 	}
 
-	var agent aiv1alpha1.Agent
-	if err := r.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: ns}, &agent); err != nil {
-		return nil, err
+	// Check if PVC exists
+	var existingPVC corev1.PersistentVolumeClaim
+	err := r.Get(ctx, types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}, &existingPVC)
+
+	if errors.IsNotFound(err) {
+		// Create PVC
+		if err := r.Create(ctx, pvc); err != nil {
+			return fmt.Errorf("failed to create workspace PVC: %w", err)
+		}
+		return nil
 	}
 
-	return &agent, nil
+	return err
 }
 
 // loadTaskSource loads the PRD content from the configured source.
@@ -408,313 +849,40 @@ func (r *TaskReconciler) loadTaskSource(ctx context.Context, task *aiv1alpha1.Ta
 	}
 }
 
-// loadProgress loads existing progress content.
-func (r *TaskReconciler) loadProgress(ctx context.Context, task *aiv1alpha1.Task) (string, error) {
-	if task.Spec.ProgressTracking == nil || task.Spec.ProgressTracking.ConfigMapRef == nil {
-		return "", nil
-	}
+// persistUpdatedPRD writes the updated PRD back to the source ConfigMap.
+func (r *TaskReconciler) persistUpdatedPRD(ctx context.Context, task *aiv1alpha1.Task, updatedPRD string) error {
+	source := task.Spec.TaskSource
 
-	var cm corev1.ConfigMap
-	err := r.Get(ctx, types.NamespacedName{
-		Name:      task.Spec.ProgressTracking.ConfigMapRef.Name,
-		Namespace: task.Namespace,
-	}, &cm)
-
-	if errors.IsNotFound(err) {
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-
-	key := task.Spec.ProgressTracking.ConfigMapRef.Key
-	if key == "" {
-		key = "progress.txt"
-	}
-
-	return cm.Data[key], nil
-}
-
-// appendProgress appends iteration results to the progress tracking.
-func (r *TaskReconciler) appendProgress(ctx context.Context, task *aiv1alpha1.Task, result aiv1alpha1.IterationResult) error {
-	if task.Spec.ProgressTracking == nil || task.Spec.ProgressTracking.Type != aiv1alpha1.ProgressTrackingTypeConfigMap {
+	// Only persist to ConfigMap sources
+	if source.Type != aiv1alpha1.TaskSourceTypeConfigMap {
 		return nil
 	}
 
-	if task.Spec.ProgressTracking.ConfigMapRef == nil {
-		return nil
+	if source.ConfigMapRef == nil {
+		return fmt.Errorf("configMapRef is required for configmap source type")
 	}
 
-	cmName := task.Spec.ProgressTracking.ConfigMapRef.Name
-	key := task.Spec.ProgressTracking.ConfigMapRef.Key
+	cmName := source.ConfigMapRef.Name
+	key := source.ConfigMapRef.Key
 	if key == "" {
-		key = "progress.txt"
+		key = "prd.json"
 	}
 
-	// Get or create ConfigMap
+	// Get the ConfigMap
 	var cm corev1.ConfigMap
-	err := r.Get(ctx, types.NamespacedName{Name: cmName, Namespace: task.Namespace}, &cm)
-
-	if errors.IsNotFound(err) {
-		// Create new ConfigMap
-		cm = corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      cmName,
-				Namespace: task.Namespace,
-				Labels: map[string]string{
-					"app.kubernetes.io/managed-by": "mcp-fabric",
-					"fabric.jarsater.ai/task":      task.Name,
-				},
-			},
-			Data: make(map[string]string),
-		}
-	} else if err != nil {
-		return err
+	if err := r.Get(ctx, types.NamespacedName{Name: cmName, Namespace: task.Namespace}, &cm); err != nil {
+		return fmt.Errorf("failed to get ConfigMap %s: %w", cmName, err)
 	}
 
-	// Build progress entry
-	status := "FAILED"
-	if result.Passed {
-		status = "PASSED"
+	// Update the PRD content
+	cm.Data[key] = updatedPRD
+
+	// Update the ConfigMap
+	if err := r.Update(ctx, &cm); err != nil {
+		return fmt.Errorf("failed to update ConfigMap %s: %w", cmName, err)
 	}
 
-	entry := fmt.Sprintf(`
----
-
-## Iteration %d - %s
-**Task:** %s - %s
-**Status:** %s
-**Learnings:**
-%s
-`,
-		result.Iteration,
-		result.StartedAt.Format(time.RFC3339),
-		result.TaskID,
-		result.TaskTitle,
-		status,
-		result.Learnings,
-	)
-
-	// Append to existing content
-	existing := cm.Data[key]
-	cm.Data[key] = existing + entry
-
-	// Create or update
-	if cm.CreationTimestamp.IsZero() {
-		return r.Create(ctx, &cm)
-	}
-	return r.Update(ctx, &cm)
-}
-
-// executeIteration runs a single iteration of the task loop.
-func (r *TaskReconciler) executeIteration(
-	ctx context.Context,
-	task *aiv1alpha1.Task,
-	orchestrator *aiv1alpha1.Agent,
-	prdContent string,
-	progressContent string,
-	limits *aiv1alpha1.TaskLimits,
-) aiv1alpha1.IterationResult {
-	logger := log.FromContext(ctx)
-	startTime := metav1.Now()
-
-	result := aiv1alpha1.IterationResult{
-		Iteration: task.Status.CurrentIteration + 1,
-		StartedAt: startTime,
-		Passed:    false,
-	}
-
-	// Build the query for the orchestrator
-	query := buildOrchestratorQuery(task, prdContent, progressContent)
-
-	// Set timeout for this iteration
-	iterationCtx, cancel := context.WithTimeout(ctx, limits.IterationTimeout.Duration)
-	defer cancel()
-
-	// Call the orchestrator agent
-	response, err := r.invokeAgent(iterationCtx, orchestrator, query, task)
-	if err != nil {
-		logger.Error(err, "Failed to invoke orchestrator agent")
-		result.Error = err.Error()
-		now := metav1.Now()
-		result.CompletedAt = &now
-		return result
-	}
-
-	// Parse response
-	parseOrchestratorResponse(response, &result)
-
-	now := metav1.Now()
-	result.CompletedAt = &now
-
-	logger.Info("Iteration completed",
-		"iteration", result.Iteration,
-		"taskId", result.TaskID,
-		"passed", result.Passed,
-	)
-
-	return result
-}
-
-// invokeAgent calls an agent via HTTP.
-func (r *TaskReconciler) invokeAgent(ctx context.Context, agent *aiv1alpha1.Agent, query string, task *aiv1alpha1.Task) (map[string]interface{}, error) {
-	endpoint := agent.Status.Endpoint
-	if endpoint == "" {
-		return nil, fmt.Errorf("agent %s has no endpoint", agent.Name)
-	}
-
-	// Build request
-	reqBody := map[string]interface{}{
-		"query": query,
-		"metadata": map[string]interface{}{
-			"taskName":      task.Name,
-			"taskNamespace": task.Namespace,
-			"iteration":     task.Status.CurrentIteration + 1,
-		},
-	}
-
-	body, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, err
-	}
-
-	// Create HTTP request
-	url := fmt.Sprintf("http://%s/invoke", endpoint)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	// Execute
-	httpClient := r.HTTPClient
-	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 5 * time.Minute}
-	}
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	// Read response
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("agent returned %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	// Parse response
-	var result map[string]interface{}
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		// Return raw response wrapped
-		return map[string]interface{}{"raw": string(respBody)}, nil
-	}
-
-	return result, nil
-}
-
-// buildOrchestratorQuery constructs the prompt for the orchestrator agent.
-func buildOrchestratorQuery(task *aiv1alpha1.Task, prdContent string, progressContent string) string {
-	var sb strings.Builder
-
-	sb.WriteString("You are orchestrating an autonomous task execution loop.\n\n")
-
-	sb.WriteString("## Current State\n")
-	sb.WriteString(fmt.Sprintf("- Task: %s\n", task.Name))
-	sb.WriteString(fmt.Sprintf("- Iteration: %d\n", task.Status.CurrentIteration+1))
-	sb.WriteString(fmt.Sprintf("- Completed Tasks: %d/%d\n", task.Status.CompletedTasks, task.Status.TotalTasks))
-	sb.WriteString(fmt.Sprintf("- Consecutive Failures: %d\n", task.Status.ConsecutiveFailures))
-	sb.WriteString("\n")
-
-	if task.Spec.Context != "" {
-		sb.WriteString("## Additional Context\n")
-		sb.WriteString(task.Spec.Context)
-		sb.WriteString("\n\n")
-	}
-
-	sb.WriteString("## PRD (Task List)\n```json\n")
-	sb.WriteString(prdContent)
-	sb.WriteString("\n```\n\n")
-
-	if progressContent != "" {
-		sb.WriteString("## Previous Progress\n")
-		sb.WriteString(progressContent)
-		sb.WriteString("\n\n")
-	}
-
-	sb.WriteString("## Instructions\n")
-	sb.WriteString("1. Identify the highest-priority incomplete task (passes=false)\n")
-	sb.WriteString("2. Execute or delegate the task to the worker agent\n")
-	sb.WriteString("3. Report the result in structured format\n")
-	sb.WriteString("4. If ALL tasks are complete, include: <promise>COMPLETE</promise>\n\n")
-
-	sb.WriteString("## Expected Response Format\n")
-	sb.WriteString("```json\n")
-	sb.WriteString(`{
-  "taskId": "story-XXX",
-  "taskTitle": "Task title",
-  "passed": true/false,
-  "learnings": "What was learned or changed",
-  "error": "Error message if failed"
-}`)
-	sb.WriteString("\n```\n")
-
-	return sb.String()
-}
-
-// parseOrchestratorResponse extracts structured data from the agent response.
-func parseOrchestratorResponse(response map[string]interface{}, result *aiv1alpha1.IterationResult) {
-	// Try to extract structured fields
-	if taskID, ok := response["taskId"].(string); ok {
-		result.TaskID = taskID
-	}
-	if taskTitle, ok := response["taskTitle"].(string); ok {
-		result.TaskTitle = taskTitle
-	}
-	if passed, ok := response["passed"].(bool); ok {
-		result.Passed = passed
-	}
-	if learnings, ok := response["learnings"].(string); ok {
-		result.Learnings = learnings
-	}
-	if errMsg, ok := response["error"].(string); ok {
-		result.Error = errMsg
-	}
-
-	// Check for nested result field (common in gateway responses)
-	if nested, ok := response["result"].(map[string]interface{}); ok {
-		if taskID, ok := nested["taskId"].(string); ok {
-			result.TaskID = taskID
-		}
-		if taskTitle, ok := nested["taskTitle"].(string); ok {
-			result.TaskTitle = taskTitle
-		}
-		if passed, ok := nested["passed"].(bool); ok {
-			result.Passed = passed
-		}
-		if learnings, ok := nested["learnings"].(string); ok {
-			result.Learnings = learnings
-		}
-		if errMsg, ok := nested["error"].(string); ok {
-			result.Error = errMsg
-		}
-	}
-
-	// Check for raw response (text output from agent)
-	if raw, ok := response["raw"].(string); ok {
-		if result.Learnings == "" {
-			result.Learnings = raw
-		}
-		// Check for completion signal in raw output
-		if strings.Contains(raw, "<promise>COMPLETE</promise>") {
-			result.Passed = true
-		}
-	}
+	return nil
 }
 
 func (r *TaskReconciler) setCondition(task *aiv1alpha1.Task, condition metav1.Condition) {
@@ -727,6 +895,8 @@ func (r *TaskReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&aiv1alpha1.Task{}).
 		Owns(&corev1.ConfigMap{}).
+		Owns(&corev1.PersistentVolumeClaim{}).
+		Owns(&batchv1.Job{}).
 		Named("task").
 		Complete(r)
 }

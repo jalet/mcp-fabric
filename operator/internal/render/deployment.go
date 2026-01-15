@@ -139,6 +139,10 @@ func AgentDeployment(params AgentDeploymentParams) *appsv1.Deployment {
 									Name:      "tmp",
 									MountPath: "/tmp",
 								},
+								{
+									Name:      "workspace",
+									MountPath: "/workspace",
+								},
 							},
 							SecurityContext: containerSecurityContext(),
 							ReadinessProbe: &corev1.Probe{
@@ -150,6 +154,8 @@ func AgentDeployment(params AgentDeploymentParams) *appsv1.Deployment {
 								},
 								InitialDelaySeconds: 5,
 								PeriodSeconds:       10,
+								TimeoutSeconds:      5,
+								FailureThreshold:    6,
 							},
 							LivenessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
@@ -159,7 +165,9 @@ func AgentDeployment(params AgentDeploymentParams) *appsv1.Deployment {
 									},
 								},
 								InitialDelaySeconds: 15,
-								PeriodSeconds:       20,
+								PeriodSeconds:       30,
+								TimeoutSeconds:      10,
+								FailureThreshold:    6,
 							},
 						},
 					},
@@ -182,6 +190,12 @@ func AgentDeployment(params AgentDeploymentParams) *appsv1.Deployment {
 						},
 						{
 							Name: "tmp",
+							VolumeSource: corev1.VolumeSource{
+								EmptyDir: &corev1.EmptyDirVolumeSource{},
+							},
+						},
+						{
+							Name: "workspace",
 							VolumeSource: corev1.VolumeSource{
 								EmptyDir: &corev1.EmptyDirVolumeSource{},
 							},

@@ -80,6 +80,87 @@ spec:
               context:
                 description: Context provides additional context to pass to the orchestrator.
                 type: string
+              git:
+                description: |-
+                  Git defines Git repository settings for the task workspace.
+                  When configured, the repo is cloned before execution and changes are pushed on completion.
+                properties:
+                  autoPush:
+                    default: true
+                    description: AutoPush enables automatic push on completion.
+                    type: boolean
+                  baseBranch:
+                    description: |-
+                      BaseBranch is the branch to create the working branch from (for feature branches).
+                      If set, creates a new branch from BaseBranch before starting work.
+                    type: string
+                  branch:
+                    default: main
+                    description: Branch is the branch to work on.
+                    type: string
+                  commitAuthor:
+                    default: MCP Fabric Task
+                    description: CommitAuthor is the author name for commits.
+                    type: string
+                  commitEmail:
+                    default: task@mcp-fabric.local
+                    description: CommitEmail is the author email for commits.
+                    type: string
+                  createPR:
+                    default: true
+                    description: CreatePR enables automatic PR creation on completion.
+                    type: boolean
+                  credentialsSecret:
+                    description: |-
+                      CredentialsSecret references a Secret containing git credentials.
+                      Required key: "token" (GitHub PAT or equivalent).
+                    properties:
+                      name:
+                        default: ""
+                        description: |-
+                          Name of the referent.
+                          This field is effectively required, but due to backwards compatibility is
+                          allowed to be empty. Instances of this type with an empty value here are
+                          almost certainly wrong.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  depth:
+                    default: 1
+                    description: Depth for shallow clone (0 = full clone).
+                    format: int32
+                    type: integer
+                  draftPR:
+                    default: true
+                    description: DraftPR creates PR as draft.
+                    type: boolean
+                  prBody:
+                    description: |-
+                      PRBody is the body template for the PR.
+                      Supports placeholders: {task}, {completed}, {total}.
+                    type: string
+                  prTitle:
+                    description: 'PRTitle is the title for the PR (default: "Task:
+                      {task-name}").'
+                    type: string
+                  provider:
+                    default: github
+                    description: Provider is the Git hosting provider (github, gitlab,
+                      bitbucket).
+                    enum:
+                    - github
+                    - gitlab
+                    - bitbucket
+                    type: string
+                  url:
+                    description: URL is the repository URL to clone.
+                    minLength: 1
+                    type: string
+                required:
+                - credentialsSecret
+                - url
+                type: object
               limits:
                 description: Limits defines execution constraints.
                 properties:
@@ -108,8 +189,9 @@ spec:
                     type: string
                 type: object
               orchestratorRef:
-                description: OrchestratorRef references the agent that orchestrates
-                  task execution.
+                description: |-
+                  OrchestratorRef references the orchestrator agent that manages task execution.
+                  If not specified, defaults to "task-orchestrator" in the same namespace.
                 properties:
                   name:
                     description: Name of the Agent resource.
@@ -295,7 +377,6 @@ spec:
                 - name
                 type: object
             required:
-            - orchestratorRef
             - taskSource
             - workerRef
             type: object
@@ -380,6 +461,9 @@ spec:
                 description: CurrentIteration is the current/last iteration number.
                 format: int32
                 type: integer
+              lastCommitSha:
+                description: LastCommitSHA is the SHA of the most recent commit.
+                type: string
               lastIterationAt:
                 description: LastIterationAt is when the last iteration ran.
                 format: date-time
@@ -402,6 +486,10 @@ spec:
                 - Completed
                 - Failed
                 - Paused
+                type: string
+              pullRequestUrl:
+                description: PullRequestURL is the URL of the PR created when task
+                  completed.
                 type: string
               recentIterations:
                 description: RecentIterations contains the most recent iteration results.
@@ -442,6 +530,10 @@ spec:
                   type: object
                 maxItems: 10
                 type: array
+              repositoryUrl:
+                description: RepositoryURL is the URL of the Git repository being
+                  used.
+                type: string
               startedAt:
                 description: StartedAt is when the task execution started.
                 format: date-time
