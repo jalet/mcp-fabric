@@ -31,13 +31,13 @@ jobs:
           - name: operator
             context: .
             dockerfile: operator/Dockerfile
-            image: ghcr.io/jarsater/mcp-fabric-operator
+            image: ghcr.io/jalet/mcp-fabric-operator
             description: "MCP Fabric Kubernetes Operator"
 
           - name: gateway
             context: .
             dockerfile: gateway/Dockerfile
-            image: ghcr.io/jarsater/mcp-fabric-gateway
+            image: ghcr.io/jalet/mcp-fabric-gateway
             description: "MCP Fabric API Gateway"
 
     steps:
@@ -71,9 +71,9 @@ jobs:
           labels: |
             org.opencontainers.image.title=mcp-fabric-${{ matrix.name }}
             org.opencontainers.image.description=${{ matrix.description }}
-            org.opencontainers.image.url=https://github.com/jarsater/mcp-fabric
-            org.opencontainers.image.source=https://github.com/jarsater/mcp-fabric
-            org.opencontainers.image.vendor=jarsater
+            org.opencontainers.image.url=https://github.com/jalet/mcp-fabric
+            org.opencontainers.image.source=https://github.com/jalet/mcp-fabric
+            org.opencontainers.image.vendor=jalet
             org.opencontainers.image.licenses=Apache-2.0
 
       - name: Build and push Docker image
