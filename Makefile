@@ -128,6 +128,12 @@ examples-tools: ## Build all example tool images
 examples-libs: ## Build all example library images
 	$(MAKE) -C examples/libs docker-build
 
+##@ Monitoring
+
+.PHONY: grafana-dashboards
+grafana-dashboards: ## Generate Grafana dashboards using Kubebuilder plugin
+	cd operator && kubebuilder edit --plugins grafana.kubebuilder.io/v1-alpha
+
 ##@ Clean
 
 .PHONY: clean
