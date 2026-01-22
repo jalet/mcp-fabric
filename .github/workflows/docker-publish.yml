@@ -5,13 +5,13 @@ on:
     branches:
       - main
     tags:
-      - 'v*.*.*'
+      - "v*.*.*"
   workflow_dispatch:
     inputs:
       push:
-        description: 'Push images to registry'
+        description: "Push images to registry"
         required: false
-        default: 'true'
+        default: "true"
         type: boolean
 
 env:
@@ -67,8 +67,15 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
-            type=sha,prefix=sha-,format=short
+            type=sha,format=long
           labels: |
+            org.opencontainers.image.title=mcp-fabric-${{ matrix.name }}
+            org.opencontainers.image.description=${{ matrix.description }}
+            org.opencontainers.image.url=https://github.com/jalet/mcp-fabric
+            org.opencontainers.image.source=https://github.com/jalet/mcp-fabric
+            org.opencontainers.image.vendor=jalet
+            org.opencontainers.image.licenses=Apache-2.0
+          annotations:
             org.opencontainers.image.title=mcp-fabric-${{ matrix.name }}
             org.opencontainers.image.description=${{ matrix.description }}
             org.opencontainers.image.url=https://github.com/jalet/mcp-fabric
