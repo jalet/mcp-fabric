@@ -1,0 +1,45 @@
+---
+customMetrics:
+  # Reconciliation metrics
+  - metric: mcpfabric_reconcile_total
+    type: counter
+    unit: none
+  - metric: mcpfabric_reconcile_duration_seconds
+    type: histogram
+    unit: s
+  - metric: mcpfabric_reconcile_errors_total
+    type: counter
+    unit: none
+
+  # Agent metrics
+  - metric: mcpfabric_agent_info
+    type: gauge
+    unit: none
+  - metric: mcpfabric_agent_ready
+    type: gauge
+    unit: none
+  - metric: mcpfabric_agent_replicas
+    type: gauge
+    unit: none
+  - metric: mcpfabric_agent_replicas_available
+    type: gauge
+    unit: none
+  - metric: mcpfabric_agent_tools_count
+    type: gauge
+    unit: none
+
+  # Tool metrics
+  - metric: mcpfabric_tool_ready
+    type: gauge
+    unit: none
+  - metric: mcpfabric_tool_definitions_count
+    type: gauge
+    unit: none
+
+  # Route metrics
+  - metric: mcpfabric_route_rules_count
+    type: gauge
+    unit: none
+  - metric: mcpfabric_route_backends_ready
+    type: gauge
+    unit: none
