@@ -60,6 +60,8 @@ jobs:
       - name: Extract metadata (tags, labels)
         id: meta
         uses: docker/metadata-action@v5
+        env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
         with:
           images: ${{ matrix.image }}
           tags: |
@@ -76,12 +78,12 @@ jobs:
             org.opencontainers.image.vendor=jalet
             org.opencontainers.image.licenses=Apache-2.0
           annotations: |
-            manifest:org.opencontainers.image.title=mcp-fabric-${{ matrix.name }}
-            manifest:org.opencontainers.image.description=${{ matrix.description }}
-            manifest:org.opencontainers.image.url=https://github.com/jalet/mcp-fabric
-            manifest:org.opencontainers.image.source=https://github.com/jalet/mcp-fabric
-            manifest:org.opencontainers.image.vendor=jalet
-            manifest:org.opencontainers.image.licenses=Apache-2.0
+            org.opencontainers.image.title=mcp-fabric-${{ matrix.name }}
+            org.opencontainers.image.description=${{ matrix.description }}
+            org.opencontainers.image.url=https://github.com/jalet/mcp-fabric
+            org.opencontainers.image.source=https://github.com/jalet/mcp-fabric
+            org.opencontainers.image.vendor=jalet
+            org.opencontainers.image.licenses=Apache-2.0
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
