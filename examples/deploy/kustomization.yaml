@@ -11,5 +11,10 @@ resources:
   # Agents
   - agents/agent-engineering-artist.yaml
   - agents/agent-text-assistant.yaml
+  - agents/agent-task-orchestrator.yaml
+  - agents/agent-code-worker.yaml
   # Routes
   - routes/route-default.yaml
+  # Tasks (example - uncomment to deploy)
+  - tasks/example-prd-configmap.yaml
+  - tasks/example-task.yaml

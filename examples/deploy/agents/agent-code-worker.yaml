@@ -1,0 +1,245 @@
+apiVersion: fabric.jarsater.ai/v1alpha1
+kind: Agent
+metadata:
+  name: code-worker
+  namespace: mcp-fabric-agents
+  labels:
+    app.kubernetes.io/component: agent
+    domain: development
+spec:
+  prompt: |
+    You are a Code Worker that implements specific tasks assigned by the orchestrator.
+
+    Your Purpose:
+    Execute focused, single-task code changes based on clear acceptance criteria.
+    Make minimal, targeted modifications to achieve the goal.
+
+    Your Tools:
+    - read_file: Read file contents
+    - write_file: Create or overwrite files
+    - edit_file: Make targeted text replacements
+    - list_directory: Explore the codebase structure
+    - search_files: Find code patterns and usages
+    - run_command: Execute build, test, or other commands
+    - create_directory: Create new directories
+    - delete_file: Remove files
+    - move_file: Move or rename files
+    - git_init: Initialize a git repository
+    - git_status: Check git status
+    - git_add: Stage files for commit
+    - git_commit: Create a commit with a message
+    - git_remote_add: Add a remote repository
+    - git_push: Push commits to a remote
+    - github_create_repo: Create a new GitHub repository
+
+    Workflow:
+    1. Understand the task and acceptance criteria
+    2. Explore the codebase to understand existing patterns
+    3. Plan your changes
+    4. Implement changes incrementally
+    5. Verify your changes meet the criteria
+    6. Document what you changed
+
+    Rules:
+    - Stay focused on the assigned task only
+    - Don't refactor unrelated code
+    - Follow existing code patterns and conventions
+    - Make minimal changes to achieve the goal
+    - Document any gotchas or learnings discovered
+
+    Response Format:
+    After completing your work, respond with a JSON object:
+    ```json
+    {
+      "passed": true/false,
+      "changes": "Description of changes made",
+      "learnings": "Insights or gotchas discovered",
+      "error": "Error message if failed"
+    }
+    ```
+
+  # LLM model configuration
+  model:
+    provider: bedrock
+    modelId: amazon.nova-lite-v1:0
+    temperature: 0.2
+    maxTokens: 8192
+
+  # Environment variables
+  env:
+    - name: AWS_DEFAULT_REGION
+      value: eu-north-1
+    - name: WORKSPACE_DIR
+      value: /workspace
+
+  # Load credentials from secrets
+  envFrom:
+    - secretRef:
+        name: aws-bedrock-credentials
+    - secretRef:
+        name: github-credentials
+
+  # Custom agent image with filesystem tools
+  image: ghcr.io/jarsater/code-worker-agent:latest
+
+  # Runtime policy
+  policy:
+    maxToolCalls: 200  # Complex tasks may need many file operations
+    requestTimeout: 20m
+    toolTimeout: 1m
+    maxConcurrentRequests: 1  # Single task at a time
+
+  # MCP tools exposed by this agent
+  tools:
+    - name: read_file
+      description: "Read the contents of a file from the workspace"
+      inputSchema:
+        type: object
+        properties:
+          path:
+            type: string
+            description: "Path to the file"
+          start_line:
+            type: integer
+            description: "Start reading from this line"
+          end_line:
+            type: integer
+            description: "Stop reading at this line"
+        required:
+          - path
+
+    - name: write_file
+      description: "Write content to a file"
+      inputSchema:
+        type: object
+        properties:
+          path:
+            type: string
+            description: "Path to the file"
+          content:
+            type: string
+            description: "Content to write"
+        required:
+          - path
+          - content
+
+    - name: edit_file
+      description: "Edit a file by replacing text"
+      inputSchema:
+        type: object
+        properties:
+          path:
+            type: string
+            description: "Path to the file"
+          old_text:
+            type: string
+            description: "Text to find"
+          new_text:
+            type: string
+            description: "Text to replace with"
+          regex:
+            type: boolean
+            description: "Use regex matching"
+        required:
+          - path
+          - old_text
+          - new_text
+
+    - name: list_directory
+      description: "List files and directories"
+      inputSchema:
+        type: object
+        properties:
+          path:
+            type: string
+            description: "Path to list"
+          recursive:
+            type: boolean
+            description: "List recursively"
+          pattern:
+            type: string
+            description: "Glob pattern to filter"
+
+    - name: search_files
+      description: "Search for text patterns in files"
+      inputSchema:
+        type: object
+        properties:
+          pattern:
+            type: string
+            description: "Pattern to search for"
+          path:
+            type: string
+            description: "Path to search in"
+          file_pattern:
+            type: string
+            description: "Glob pattern for files"
+          regex:
+            type: boolean
+            description: "Use regex"
+        required:
+          - pattern
+
+    - name: run_command
+      description: "Run a shell command"
+      inputSchema:
+        type: object
+        properties:
+          command:
+            type: string
+            description: "Command to execute"
+          timeout:
+            type: integer
+            description: "Timeout in seconds"
+        required:
+          - command
+
+    - name: create_directory
+      description: "Create a directory"
+      inputSchema:
+        type: object
+        properties:
+          path:
+            type: string
+            description: "Path to create"
+        required:
+          - path
+
+    - name: delete_file
+      description: "Delete a file"
+      inputSchema:
+        type: object
+        properties:
+          path:
+            type: string
+            description: "Path to delete"
+        required:
+          - path
+
+    - name: move_file
+      description: "Move or rename a file"
+      inputSchema:
+        type: object
+        properties:
+          source:
+            type: string
+            description: "Source path"
+          destination:
+            type: string
+            description: "Destination path"
+        required:
+          - source
+          - destination
+
+  # Deployment configuration
+  replicas: 1
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+  nodeSelector:
+    kubernetes.io/os: linux

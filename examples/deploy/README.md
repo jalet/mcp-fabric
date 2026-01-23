@@ -9,6 +9,7 @@ deploy/
 ├── agents/           # Agent CR examples
 ├── tools/            # Tool CR examples
 ├── routes/           # Route CR examples
+├── tasks/            # Task CR examples
 └── monitoring/       # Prometheus stack
 ```
 
@@ -32,6 +33,7 @@ deploy/
 kubectl apply -f examples/deploy/tools/
 kubectl apply -f examples/deploy/agents/
 kubectl apply -f examples/deploy/routes/
+kubectl apply -f examples/deploy/tasks/
 ```
 
 ### Deploy Individual Agents
@@ -63,6 +65,39 @@ kubectl apply -f examples/deploy/agents/agent-text-assistant.yaml
 | File | Routes |
 |------|--------|
 | `route-default.yaml` | Default routing rules for all agents |
+
+## Task Examples
+
+Tasks enable autonomous multi-step AI workflows with Git integration.
+
+| File | Description |
+|------|-------------|
+| `example-task.yaml` | Complete Task CR example with Git, quality gates, and limits |
+| `example-prd-configmap.yaml` | Example PRD (Product Requirements Document) stored in ConfigMap |
+
+### Deploy a Task
+
+```bash
+# Create the PRD ConfigMap first
+kubectl apply -f examples/deploy/tasks/example-prd-configmap.yaml
+
+# Create the git credentials secret (required for git operations)
+kubectl -n mcp-fabric-agents create secret generic github-credentials \
+  --from-literal=token=your-github-token
+
+# Deploy the Task
+kubectl apply -f examples/deploy/tasks/example-task.yaml
+```
+
+### Task Features
+
+- **Task Sources**: Load PRD from ConfigMap, Secret, or inline in the spec
+- **Git Integration**: Automatic clone, commit, push, and PR creation
+- **Quality Gates**: Run lint, test, or other commands after each task
+- **Execution Limits**: Control iterations, timeouts, and consecutive failures
+- **Progress Tracking**: Persist progress via ConfigMap or PVC
+
+See the [Task CRD Reference](../../docs/CRD-REFERENCE.md) for full specification details.
 
 ## Monitoring
 

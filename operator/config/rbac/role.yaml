@@ -8,6 +8,7 @@ rules:
   - ""
   resources:
   - configmaps
+  - persistentvolumeclaims
   - serviceaccounts
   - services
   verbs:
@@ -17,6 +18,20 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods/log
+  verbs:
+  - get
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
   - watch
 - apiGroups:
   - apps
@@ -31,10 +46,23 @@ rules:
   - update
   - watch
 - apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - fabric.jarsater.ai
   resources:
   - agents
   - routes
+  - tasks
   - tools
   verbs:
   - create
@@ -49,6 +77,7 @@ rules:
   resources:
   - agents/finalizers
   - routes/finalizers
+  - tasks/finalizers
   - tools/finalizers
   verbs:
   - update
@@ -57,6 +86,7 @@ rules:
   resources:
   - agents/status
   - routes/status
+  - tasks/status
   - tools/status
   verbs:
   - get
