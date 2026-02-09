@@ -1,10 +1,10 @@
 package controllers
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"strings"
 	"time"
 
@@ -356,7 +356,12 @@ func (r *TaskReconciler) handleRunningPhase(ctx context.Context, task *aiv1alpha
 			}
 			recreations++
 
-			if recreations > maxJobRecreations {
+			maxRecreations := int32(maxJobRecreations)
+			if task.Spec.Limits != nil && task.Spec.Limits.MaxJobRecreations != nil {
+				maxRecreations = *task.Spec.Limits.MaxJobRecreations
+			}
+
+			if int32(recreations) > maxRecreations {
 				logger.Info("Max Job recreations exceeded, failing task", "job", jobName, "recreations", recreations)
 				task.Status.Phase = aiv1alpha1.TaskPhaseFailed
 				task.Status.Message = fmt.Sprintf("Orchestrator Job lost %d times, giving up", recreations-1)
@@ -606,30 +611,25 @@ func (r *TaskReconciler) getOrchestratorResult(ctx context.Context, job *batchv1
 	}
 	defer logs.Close()
 
-	logBytes, err := io.ReadAll(logs)
-	if err != nil {
+	// Scan line-by-line and track the last line containing the result marker.
+	var resultLine string
+	scanner := bufio.NewScanner(logs)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if idx := strings.Index(line, orchestratorResultMarker); idx != -1 {
+			resultLine = line[idx+len(orchestratorResultMarker):]
+		}
+	}
+	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("failed to read pod logs: %w", err)
 	}
 
-	logStr := string(logBytes)
-
-	// Look for the orchestrator result marker
-	idx := strings.LastIndex(logStr, orchestratorResultMarker)
-	if idx == -1 {
+	if resultLine == "" {
 		return nil, fmt.Errorf("orchestrator result marker not found in logs")
 	}
 
-	// Extract the JSON after the marker
-	jsonStart := idx + len(orchestratorResultMarker)
-	jsonStr := logStr[jsonStart:]
-
-	// Find the end of the JSON (first newline or end of string)
-	if newlineIdx := strings.Index(jsonStr, "\n"); newlineIdx != -1 {
-		jsonStr = jsonStr[:newlineIdx]
-	}
-
 	var result OrchestratorResult
-	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
+	if err := json.Unmarshal([]byte(strings.TrimSpace(resultLine)), &result); err != nil {
 		return nil, fmt.Errorf("failed to parse orchestrator result: %w", err)
 	}
 

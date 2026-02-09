@@ -3,6 +3,7 @@ package render
 import (
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"time"
 
 	aiv1alpha1 "github.com/jarsater/mcp-fabric/operator/api/v1alpha1"
@@ -97,7 +98,10 @@ func OrchestratorJob(params OrchestratorJobParams) (*batchv1.Job, error) {
 
 	jobName := fmt.Sprintf("%s-orchestrator", task.Name)
 	if len(jobName) > 63 {
-		jobName = jobName[:63]
+		h := fnv.New32a()
+		h.Write([]byte(jobName))
+		hash := fmt.Sprintf("%08x", h.Sum32())
+		jobName = jobName[:54] + "-" + hash
 	}
 
 	labels := OrchestratorJobLabels(task)
@@ -188,21 +192,22 @@ func OrchestratorJob(params OrchestratorJobParams) (*batchv1.Job, error) {
 	if task.Spec.Git != nil {
 		orchestratorContainer.VolumeMounts = append(orchestratorContainer.VolumeMounts,
 			corev1.VolumeMount{
-				Name:      "git-home",
-				MountPath: "/home/appuser",
-			},
-			corev1.VolumeMount{
 				Name:      "git-credentials",
 				MountPath: "/secrets/git",
 				ReadOnly:  true,
 			},
 		)
-		// Tell orchestrator where to find the git token file
-		// The orchestrator should read from /secrets/git/token instead of env var
-		orchestratorContainer.Env = append(orchestratorContainer.Env, corev1.EnvVar{
-			Name:  "GIT_TOKEN_FILE",
-			Value: "/secrets/git/token",
-		})
+		// Tell orchestrator where to find the git token file and shared gitconfig
+		orchestratorContainer.Env = append(orchestratorContainer.Env,
+			corev1.EnvVar{
+				Name:  "GIT_TOKEN_FILE",
+				Value: "/secrets/git/token",
+			},
+			corev1.EnvVar{
+				Name:  "GIT_CONFIG_GLOBAL",
+				Value: "/workspace/.gitconfig",
+			},
+		)
 	}
 
 	// Add env vars from orchestrator agent spec
@@ -303,6 +308,17 @@ else
     echo "Checking out branch ${GIT_BRANCH}..."
     git checkout "${GIT_BRANCH}" 2>/dev/null || git checkout -b "${GIT_BRANCH}"
 fi
+
+# Write shared gitconfig to workspace volume (accessible by orchestrator)
+cat > /workspace/.gitconfig <<GITCFG
+[user]
+	name = ${GIT_AUTHOR}
+	email = ${GIT_EMAIL}
+[safe]
+	directory = /workspace
+[credential]
+	helper = !f() { echo username=x-access-token; echo password=$(cat /secrets/git/token); }; f
+GITCFG
 
 echo "Git setup complete. HEAD: $(git rev-parse HEAD)"
 `

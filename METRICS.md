@@ -51,10 +51,10 @@ The operator exposes metrics about CRD reconciliation and resource status.
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
 | `mcpfabric_reconcile_total` | Counter | `controller`, `result` | Total reconciliations per controller |
-| `mcpfabric_reconcile_duration_seconds` | Histogram | `controller` | Reconciliation duration |
+| `mcpfabric_reconcile_duration_seconds` | Histogram | `controller`, `result` | Reconciliation duration |
 | `mcpfabric_reconcile_errors_total` | Counter | `controller`, `error_type` | Reconciliation errors by type |
 
-**Controllers:** `agent`, `tool`, `route`
+**Controllers:** `agent`, `tool`, `route`, `task`
 
 **Results:** `success`, `error`, `requeue`
 
@@ -179,6 +179,38 @@ Operator-focused metrics:
 - Reconciliation rate by controller and result
 - Reconciliation duration percentiles
 - Work queue depth
+
+## Breaking Changes
+
+### Reconciliation metric label changes
+
+`mcpfabric_reconcile_total` and `mcpfabric_reconcile_duration_seconds` now include a `result` label (`success`, `error`, `requeue`) in addition to the existing `controller` label.
+
+**Previous labels:** `["controller"]`
+**Current labels:** `["controller", "result"]`
+
+This is a breaking change for PromQL queries and alert rules that use exact label matchers against these metrics. Queries using `by (controller)` aggregation will continue to work, but queries that assumed a single-label series (e.g. bare metric selectors without aggregation) may return unexpected multiple series per controller.
+
+**Migration examples:**
+
+```promql
+# BEFORE: total reconciliation rate per controller
+sum by (controller) (rate(mcpfabric_reconcile_total[5m]))
+# AFTER: same query still works — the additional label is aggregated away
+
+# BEFORE: error rate (not previously possible without result label)
+# AFTER: error rate per controller
+sum by (controller) (rate(mcpfabric_reconcile_total{result="error"}[5m]))
+
+# BEFORE: reconcile duration p95
+histogram_quantile(0.95, sum by (controller, le) (rate(mcpfabric_reconcile_duration_seconds_bucket[5m])))
+# AFTER: include result label in aggregation, or aggregate it away
+histogram_quantile(0.95, sum by (controller, le) (rate(mcpfabric_reconcile_duration_seconds_bucket[5m])))
+# Or filter by result:
+histogram_quantile(0.95, sum by (controller, le) (rate(mcpfabric_reconcile_duration_seconds_bucket{result="success"}[5m])))
+```
+
+**Action required:** Review any existing Grafana dashboards, alert rules, or recording rules that reference `mcpfabric_reconcile_total` or `mcpfabric_reconcile_duration_seconds` and ensure they handle the additional `result` label dimension.
 
 ## PromQL Query Examples
 

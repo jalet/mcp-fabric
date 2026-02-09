@@ -285,6 +285,8 @@ func DeleteRouteMetrics(name, namespace string) {
 
 // SetTaskMetrics updates Task metrics
 func SetTaskMetrics(name, namespace, phase string, iteration, completedTasks, totalTasks int) {
+	// Clear any previous phase series to avoid stale gauges
+	TaskInfo.DeletePartialMatch(prometheus.Labels{"name": name, "namespace": namespace})
 	TaskInfo.WithLabelValues(name, namespace, phase).Set(1)
 	TaskIteration.WithLabelValues(name, namespace).Set(float64(iteration))
 	TaskCompletedTasks.WithLabelValues(name, namespace).Set(float64(completedTasks))
@@ -296,5 +298,5 @@ func DeleteTaskMetrics(name, namespace string) {
 	TaskIteration.DeleteLabelValues(name, namespace)
 	TaskCompletedTasks.DeleteLabelValues(name, namespace)
 	TaskTotalTasks.DeleteLabelValues(name, namespace)
-	// Note: TaskInfo has more labels (phase), cannot easily delete
+	TaskInfo.DeletePartialMatch(prometheus.Labels{"name": name, "namespace": namespace})
 }

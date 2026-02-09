@@ -172,6 +172,13 @@ spec:
                     format: int32
                     minimum: 1
                     type: integer
+                  maxJobRecreations:
+                    description: |-
+                      MaxJobRecreations is the maximum number of times a lost Job will be recreated
+                      before the task is marked as failed.
+                    format: int32
+                    minimum: 1
+                    type: integer
                   totalTimeout:
                     default: 24h
                     description: TotalTimeout is the maximum total duration for the

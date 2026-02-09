@@ -118,7 +118,7 @@ func TestOrchestratorJob(t *testing.T) {
 				if !foundCredentialsMount {
 					t.Error("git-credentials volume mount not found in init container")
 				}
-				// Check git-home volume exists
+				// Check git-home volume exists (for init container only)
 				foundGitHomeVolume := false
 				foundCredentialsVolume := false
 				for _, vol := range job.Spec.Template.Spec.Volumes {
@@ -135,15 +135,28 @@ func TestOrchestratorJob(t *testing.T) {
 				if !foundCredentialsVolume {
 					t.Error("git-credentials volume not found")
 				}
+				// Security: git-home must NOT be mounted in the orchestrator container
+				for _, mount := range job.Spec.Template.Spec.Containers[0].VolumeMounts {
+					if mount.Name == "git-home" {
+						t.Error("git-home volume should NOT be mounted in orchestrator container")
+					}
+				}
 				// Check GIT_TOKEN_FILE env var in main container (points to mounted secret)
 				foundTokenFile := false
+				foundConfigGlobal := false
 				for _, env := range job.Spec.Template.Spec.Containers[0].Env {
 					if env.Name == "GIT_TOKEN_FILE" && env.Value == "/secrets/git/token" {
 						foundTokenFile = true
 					}
+					if env.Name == "GIT_CONFIG_GLOBAL" && env.Value == "/workspace/.gitconfig" {
+						foundConfigGlobal = true
+					}
 				}
 				if !foundTokenFile {
 					t.Error("GIT_TOKEN_FILE env var not found in orchestrator container")
+				}
+				if !foundConfigGlobal {
+					t.Error("GIT_CONFIG_GLOBAL env var not found in orchestrator container")
 				}
 				// Check git-credentials volume mount in orchestrator container
 				foundOrchestratorCredentialsMount := false
