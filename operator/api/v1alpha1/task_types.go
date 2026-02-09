@@ -91,6 +91,12 @@ type TaskLimits struct {
 	// +kubebuilder:default=3
 	// +optional
 	MaxConsecutiveFailures *int32 `json:"maxConsecutiveFailures,omitempty"`
+
+	// MaxJobRecreations is the maximum number of times a lost Job will be recreated
+	// before the task is marked as failed.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	MaxJobRecreations *int32 `json:"maxJobRecreations,omitempty"`
 }
 
 // GitProvider specifies the Git hosting provider.
