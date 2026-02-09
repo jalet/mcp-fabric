@@ -136,8 +136,11 @@ spec:
                     type: string
                   provider:
                     default: github
-                    description: Provider is the Git hosting provider (github, gitlab,
-                      bitbucket).
+                    description: |-
+                      Provider is the Git hosting provider (github, gitlab, bitbucket).
+                      Note: automatic pull-request creation (CreatePR) is currently only
+                      implemented for GitHub. For gitlab/bitbucket the branch is pushed but no
+                      PR is opened automatically.
                     enum:
                     - github
                     - gitlab
@@ -219,11 +222,12 @@ spec:
                       type: array
                     failurePolicy:
                       default: Fail
-                      description: FailurePolicy determines what happens if the gate
-                        fails.
+                      description: |-
+                        FailurePolicy determines what happens if the gate fails.
+                          Fail   -- a failing gate marks the task as not passed.
+                          Ignore -- a failing gate is recorded but does not block the task.
                       enum:
                       - Fail
-                      - Retry
                       - Ignore
                       type: string
                     name:

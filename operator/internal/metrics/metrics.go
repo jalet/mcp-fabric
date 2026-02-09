@@ -3,7 +3,6 @@ package metrics
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/collectors"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
@@ -190,9 +189,11 @@ var (
 )
 
 func init() {
-	// Register Go runtime and process collectors
-	metrics.Registry.MustRegister(collectors.NewGoCollector())
-	metrics.Registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	// Note: the Go runtime and process collectors are intentionally NOT
+	// registered here. controller-runtime already registers them on
+	// metrics.Registry in its own init (sigs.k8s.io/controller-runtime/pkg/
+	// internal/controller/metrics), and registering them again panics with
+	// "duplicate metrics collector registration attempted".
 
 	// Register all metrics with controller-runtime's global registry
 	metrics.Registry.MustRegister(

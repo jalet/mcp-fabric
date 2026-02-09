@@ -23,18 +23,21 @@ flowchart TB
         agent1["Agent Pod 1<br/>+ Service<br/>+ ConfigMap<br/>+ NetworkPolicy"]
         agent2["Agent Pod 2<br/>+ Service<br/>+ ConfigMap<br/>+ NetworkPolicy"]
         agent3["Agent Pod N<br/>..."]
+        task_job["Task Job<br/>(orchestrator + worker sidecar)<br/>+ Workspace PVC"]
     end
 
     subgraph crds["Custom Resources"]
         agent_cr["Agent CRs"]
         route_cr["Route CRs"]
         tool_cr["Tool CRs"]
+        task_cr["Task CRs"]
     end
 
     subgraph external["External Services"]
         llm["LLM Provider<br/>(Bedrock/OpenAI)"]
         mcp_server["MCP Servers"]
         aws["AWS APIs"]
+        git["Git (GitHub)"]
     end
 
     clients --> gw
@@ -46,12 +49,16 @@ flowchart TB
     op --> agent_cr
     op --> route_cr
     op --> tool_cr
+    op --> task_cr
     op --> |creates| agents_ns
     op --> |compiles| routes_cm
 
     agent1 --> llm
     agent1 --> mcp_server
     agent1 --> aws
+
+    task_job --> llm
+    task_job --> git
 ```
 
 ## Request Flow
@@ -111,6 +118,8 @@ erDiagram
     Agent ||--o{ Tool : references
     Agent ||--o{ Secret : "envFrom"
     Route ||--o{ Agent : "routes to"
+    Task ||--|| Agent : "workerRef / orchestratorRef"
+    Task ||--o| Secret : "git credentials"
 
     Agent {
         string name
@@ -119,6 +128,7 @@ erDiagram
         array toolPackages
         array envFrom
         int replicas
+        bool standalone
     }
 
     Route {
@@ -132,6 +142,15 @@ erDiagram
         string image
         string entryModule
         array tools
+    }
+
+    Task {
+        string name
+        object workerRef
+        object taskSource
+        array qualityGates
+        object git
+        object limits
     }
 ```
 
@@ -162,17 +181,21 @@ flowchart TB
         ac["Agent Controller"]
         rc["Route Controller"]
         tc["Tool Controller"]
+        tkc["Task Controller"]
     end
 
     subgraph k8s["Kubernetes API"]
         agent_cr["Agent CR"]
         route_cr["Route CR"]
         tool_cr["Tool CR"]
+        task_cr["Task CR"]
         dep["Deployment"]
         svc["Service"]
         cm["ConfigMap"]
         np["NetworkPolicy"]
         sa["ServiceAccount"]
+        job["Job"]
+        pvc["Workspace PVC"]
     end
 
     subgraph gateway["Gateway"]
@@ -195,8 +218,36 @@ flowchart TB
     tc -->|watch| tool_cr
     tc -->|validate| tool_cr
 
+    tkc -->|watch| task_cr
+    tkc -->|create/update| job
+    tkc -->|create/update| pvc
+
     api --> rt
     rt --> sel
     sel --> cb
     cb --> agents["Agent Pods"]
+```
+
+## Task Orchestration
+
+```mermaid
+flowchart TB
+    task_cr["Task CR"] --> tkc["Task Controller"]
+    tkc -->|reconcile| pvc["Workspace PVC<br/>(ReadWriteOnce)"]
+    tkc -->|create| job
+
+    subgraph job["Orchestrator Job Pod"]
+        direction TB
+        clone["init: git-clone<br/>clones repo into /workspace"]
+        worker["sidecar: worker<br/>HTTP :8080 (restartPolicy: Always)"]
+        orch["orchestrator<br/>loops over PRD, runs quality gates"]
+        clone --> worker
+        orch -->|"dispatch (127.0.0.1:8080)"| worker
+        worker -. shares /workspace .- orch
+    end
+
+    orch -->|commit + push + PR| git["Git (GitHub)"]
+    worker -->|model calls via IRSA| llm["LLM Provider"]
+    job -->|logs: ORCHESTRATOR_RESULT| tkc
+    tkc -->|update| status["Task.status<br/>phase, progress, commitSha, PR URL"]
 ```

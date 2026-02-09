@@ -15,7 +15,7 @@ Reference implementations demonstrating how to build AI agents for MCP Fabric.
 
 Each agent follows this structure:
 
-```
+```text
 my-agent/
 ├── pyproject.toml    # Python dependencies
 ├── server.py         # Agent implementation
@@ -27,23 +27,24 @@ my-agent/
 Build all agents:
 
 ```bash
-make docker-build
+mise run docker:build
 ```
 
 Build a specific agent:
 
 ```bash
-make docker-build-default
-make docker-build-engineering-artist
-make docker-build-task-orchestrator
-make docker-build-code-worker
+mise run images:examples
+mise run images:examples
+mise run images:examples
+mise run images:examples
 ```
 
 ## Agent Patterns
 
 ### Basic Agent (default)
 
-The default agent runner loads configuration from the Agent CR and executes queries:
+The default agent runner loads configuration from the Agent CR and executes
+queries:
 
 ```python
 def create_agent():
@@ -71,11 +72,17 @@ agent = Agent(model=model, tools=[create_diagram])
 Orchestrates multi-step Task execution without using an LLM. The orchestrator:
 
 1. Parses the PRD to find incomplete tasks sorted by priority
-2. Dispatches tasks to a worker agent (e.g., `code-worker`)
+2. Dispatches tasks to the worker, which runs as a sidecar in the same Pod and
+   is reached over loopback (`127.0.0.1:8080`)
 3. Runs quality gates after each task completion
 4. Manages Git operations: commit, push, and PR creation
 
+The operator co-locates the worker container (selected by the Task's
+`workerRef`) alongside the orchestrator in the Job Pod, sharing the workspace
+volume so the worker's file edits land in the cloned repository.
+
 Supports two execution modes:
+
 - **HTTP Service Mode**: Runs as a Flask server for single-iteration requests
 - **Job Mode**: Runs as a Kubernetes Job for complete task execution loops
 
@@ -90,7 +97,8 @@ def orchestrate(query: str, metadata: dict) -> dict:
 
 ### Code Worker (code-worker)
 
-An LLM-powered agent that implements individual tasks using filesystem and Git tools:
+An LLM-powered agent that implements individual tasks using filesystem and Git
+tools:
 
 ```python
 @tool
@@ -116,7 +124,9 @@ agent = Agent(
 ```
 
 The code worker provides these tools to the LLM:
-- File operations: `read_file`, `write_file`, `edit_file`, `delete_file`, `move_file`
+
+- File operations: `read_file`, `write_file`, `edit_file`, `delete_file`,
+  `move_file`
 - Directory operations: `list_directory`, `create_directory`
 - Search: `search_files` (text pattern search)
 - Commands: `run_command` (shell execution)
@@ -125,11 +135,13 @@ The code worker provides these tools to the LLM:
 ## Creating a New Agent
 
 1. Copy an existing agent directory:
+
    ```bash
    cp -r default my-agent
    ```
 
 2. Update `pyproject.toml`:
+
    ```toml
    [project]
    name = "my-agent"
@@ -142,15 +154,18 @@ The code worker provides these tools to the LLM:
    - Use Strands Agent for LLM interactions
 
 4. Build the image:
+
    ```bash
    docker build -t my-agent:latest .
    ```
 
-5. Add to Makefile (optional):
-   ```makefile
-   .PHONY: docker-build-my-agent
-   docker-build-my-agent:
-       docker build -t $(MY_AGENT_IMG) -f my-agent/Dockerfile my-agent/
+5. Add the build to the `images:examples` task in the repo-root `mise.toml`
+   (optional):
+
+   ```toml
+   # inside [tasks."images:examples"]
+   docker build --load -t ghcr.io/jalet/my-agent:latest \
+     -f agents/my-agent/Dockerfile agents/my-agent/
    ```
 
 ## See Also

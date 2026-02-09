@@ -239,3 +239,13 @@ local/
 
 # Controller-gen output (optional - usually tracked)
 # operator/api/*/zz_generated.deepcopy.go
+
+# mise local overrides (never commit; mise.lock IS committed)
+mise.local.toml
+.mise.local.toml
+
+# mise OCI tool-blob cache — large binary artifacts, never commit
+mise-oci/
+# mise install/cache dirs if ever materialized in-repo
+.mise/cache/
+.mise.cache/

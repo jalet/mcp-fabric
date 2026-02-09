@@ -8,7 +8,7 @@ metadata:
     domain: utilities
 spec:
   # OCI image containing the @tool decorated Python functions
-  image: ghcr.io/jarsater/string-tools:latest
+  image: ghcr.io/jalet/string-tools:latest
   imagePullPolicy: IfNotPresent
 
   # Python module path to import

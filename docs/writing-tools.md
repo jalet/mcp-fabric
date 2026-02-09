@@ -4,11 +4,13 @@ This guide explains how to build tool packages for MCP Fabric agents.
 
 ## Overview
 
-Tool packages bundle Python functions into OCI images that agents can load at runtime. Each tool is a decorated Python function that becomes available to the AI agent.
+Tool packages bundle Python functions into OCI images that agents can load at
+runtime. Each tool is a decorated Python function that becomes available to the
+AI agent.
 
 ## Tool Package Structure
 
-```
+```text
 my-tools/
 ├── pyproject.toml
 ├── my_tools/
@@ -96,7 +98,8 @@ RUN pip install -e .
 
 ## Tool Decorator
 
-The `@tool` decorator converts a function into an agent-callable tool. Key requirements:
+The `@tool` decorator converts a function into an agent-callable tool. Key
+requirements:
 
 ### Docstrings
 

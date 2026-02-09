@@ -1,14 +1,17 @@
 # MCP Fabric
 
-A Kubernetes-native platform for deploying and managing AI agents declaratively using Custom Resource Definitions (CRDs).
+A Kubernetes-native platform for deploying and managing AI agents declaratively
+using Custom Resource Definitions (CRDs).
 
 ![./docs/header.png](./docs/header.png)
 
 ## Overview
 
-MCP Fabric enables you to define AI agents as Kubernetes resources. The operator automatically provisions all necessary infrastructure including Deployments, Services, ConfigMaps, and NetworkPolicies with security hardening built-in.
+MCP Fabric enables you to define AI agents as Kubernetes resources. The operator
+automatically provisions all necessary infrastructure including Deployments,
+Services, ConfigMaps, and NetworkPolicies with security hardening built-in.
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────┐
 │                      MCP Fabric Framework                        │
 ├──────────────────────────────────────────────────────────────────┤
@@ -30,13 +33,20 @@ MCP Fabric enables you to define AI agents as Kubernetes resources. The operator
 
 ## Features
 
-- **Declarative Agent Definition**: Define agents with system prompts, model configuration, and tool access using CRDs
-- **Autonomous Task Execution**: Run multi-step AI tasks with orchestration, progress tracking, and quality gates
-- **Git Integration**: Clone repositories, commit changes, and create PRs automatically from Tasks
-- **Automatic Infrastructure**: Operator creates Deployments, Services, ConfigMaps, and NetworkPolicies
-- **Security by Default**: Non-root containers, read-only filesystems, dropped capabilities, network isolation
-- **Flexible Routing**: Route requests to agents by name or intent-based regex matching
-- **Tool Packages**: Bundle Python tools into OCI images and reference them from agents
+- **Declarative Agent Definition**: Define agents with system prompts, model
+  configuration, and tool access using CRDs
+- **Autonomous Task Execution**: Run multi-step AI tasks with orchestration,
+  progress tracking, and quality gates
+- **Git Integration**: Clone repositories, commit changes, and create PRs
+  automatically from Tasks
+- **Automatic Infrastructure**: Operator creates Deployments, Services,
+  ConfigMaps, and NetworkPolicies
+- **Security by Default**: Non-root containers, read-only filesystems, dropped
+  capabilities, network isolation
+- **Flexible Routing**: Route requests to agents by name or intent-based regex
+  matching
+- **Tool Packages**: Bundle Python tools into OCI images and reference them from
+  agents
 - **MCP Protocol Support**: Native Model Context Protocol integration
 
 ## Components
@@ -152,15 +162,17 @@ kubectl get tasks -w
 | [Architecture](docs/architecture.md) | System design, components, and patterns |
 | [Writing Agents](docs/writing-agents.md) | Guide to building custom agents |
 | [Writing Tools](docs/writing-tools.md) | Guide to building tool packages |
+| [Running Tasks](docs/tasks.md) | Autonomous multi-step workflows with Git integration |
 | [API Reference](docs/CRD-REFERENCE.md) | Complete CRD specification reference |
 | [Metrics](METRICS.md) | Prometheus metrics and observability |
 | [Troubleshooting](docs/TROUBLESHOOTING.md) | Common issues and solutions |
 
 ## Examples
 
-The `examples/` directory contains reference implementations demonstrating how to build agents, tools, and shared libraries:
+The `examples/` directory contains reference implementations demonstrating how
+to build agents, tools, and shared libraries:
 
-```
+```text
 examples/
 ├── agents/              # Example agent implementations
 │   ├── default/         # Default agent runner
@@ -174,19 +186,40 @@ examples/
 
 See [examples/README.md](examples/README.md) for details.
 
-## Building
+## Local development
+
+Dev tooling and tasks are managed by [mise](https://mise.jdx.dev). It pins the
+exact Go, golangci-lint, controller-gen, kubectl, and related versions (see
+`mise.toml`) so local and CI builds match.
 
 ```bash
-# Build operator and gateway
-make docker-build
-
-# Build example agents and tools
-make examples
+# One-time: install mise, then the pinned toolchain
+brew install mise        # or: curl https://mise.run | sh
+mise install
 ```
 
-## Development
+Common tasks (`mise tasks` lists them all):
 
-See [DEVELOPMENT.md](DEVELOPMENT.md) for local development setup with Kind.
+| Task | What it does |
+| --- | --- |
+| `mise run ci` | Full CI-parity suite (exactly what `.github/workflows/ci.yml` runs) |
+| `mise run build` | Build the operator and gateway binaries |
+| `mise run test` | Run all Go tests with the race detector |
+| `mise run test:integration` | Run the operator envtest integration tests |
+| `mise run lint:go` / `vet` | golangci-lint / go vet across both modules |
+| `mise run fmt:go` / `fmt:md` | Format Go / markdown |
+| `mise run generate` / `manifests` | Regenerate DeepCopy / CRD + RBAC |
+| `mise run docker:build` | Build the operator and gateway images |
+| `mise run images:examples` | Build the example agent/tool/library images |
+| `mise run crds:install` | Install CRDs into the current cluster |
+
+`mise.lock` pins tool checksums for `macos-arm64` and `linux-x64` and **must be
+committed**. After changing a tool version, run `mise run mise:lock` and commit
+the result (`mise run mise:check` is the CI drift guard). Tool upgrades are
+otherwise automated by Renovate (grouped "mise tools" PRs).
+
+See [DEVELOPMENT.md](DEVELOPMENT.md) for the full task list and the Kind-based
+local cluster walkthrough.
 
 ## Contributing
 
@@ -198,4 +231,5 @@ See [SECURITY.md](SECURITY.md) for security policy and vulnerability reporting.
 
 ## License
 
-This project is licensed under the Apache License 2.0 - see [LICENSE](LICENSE) for details.
+This project is licensed under the Apache License 2.0 - see [LICENSE](LICENSE)
+for details.

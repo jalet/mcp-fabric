@@ -30,7 +30,7 @@ curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack
 
 ## Project Structure
 
-```
+```text
 mcp-fabric/
 ├── operator/           # Kubernetes operator (Go)
 │   ├── api/            # CRD types (v1alpha1)
@@ -78,16 +78,16 @@ kubectl -n kube-system rollout restart deployment coredns
 
 ```bash
 # Build operator and gateway
-make docker-build
+mise run docker:build
 
 # Build example agents, tools, and libs
-make examples
+mise run images:examples
 
 # Load images into Kind
-kind load docker-image ghcr.io/jarsater/mcp-fabric-operator:latest --name mcp-fabric
-kind load docker-image ghcr.io/jarsater/mcp-fabric-gateway:latest --name mcp-fabric
-kind load docker-image ghcr.io/jarsater/strands-agent-runner:latest --name mcp-fabric
-kind load docker-image ghcr.io/jarsater/string-tools:latest --name mcp-fabric
+kind load docker-image ghcr.io/jalet/mcp-fabric-operator:latest --name mcp-fabric
+kind load docker-image ghcr.io/jalet/mcp-fabric-gateway:latest --name mcp-fabric
+kind load docker-image ghcr.io/jalet/strands-agent-runner:latest --name mcp-fabric
+kind load docker-image ghcr.io/jalet/string-tools:latest --name mcp-fabric
 # Load other example agent images as needed
 ```
 
@@ -130,71 +130,53 @@ kubectl -n mcp-fabric-agents get agents,tools,routes
 kubectl -n mcp-fabric-agents get pods
 ```
 
-## Makefile Targets
+## Tasks
 
-### Root Makefile
-
-```bash
-make help           # Show all targets
-
-# Development
-make generate       # Generate DeepCopy methods
-make manifests      # Generate CRD manifests
-make fmt            # Format code
-make vet            # Run go vet
-make lint           # Run golangci-lint
-make tidy           # Run go mod tidy
-
-# Build
-make build          # Build all binaries
-make build-operator # Build operator binary
-make build-gateway  # Build gateway binary
-
-# Docker
-make docker-build   # Build all Docker images
-make docker-push    # Push all Docker images
-
-# Testing
-make test           # Run all tests
-make test-operator  # Run operator tests
-make test-gateway   # Run gateway tests
-
-# CRDs
-make install-crds   # Install CRDs into cluster
-make uninstall-crds # Uninstall CRDs from cluster
-
-# Clean
-make clean          # Clean build artifacts
-```
-
-### Examples Makefile
+Tooling and tasks are managed by [mise](https://mise.jdx.dev). Run
+`mise tasks` to list everything; the common ones:
 
 ```bash
-# Build all examples from root
-make examples              # Build all example images
-make examples-agents       # Build all example agent images
-make examples-tools        # Build all example tool images
-make examples-libs         # Build all example library images
+mise tasks                # List all tasks
 
-# Or from examples directory
-cd examples
-make docker-build          # Build all example images
-make -C agents docker-build    # Build all agent images
-make -C tools docker-build     # Build all tool images
-make -C libs docker-build      # Build all library images
+# Code generation
+mise run generate         # Generate DeepCopy methods (controller-gen object)
+mise run manifests        # Generate CRD + RBAC manifests
+
+# Quality
+mise run fmt:go           # gofmt both modules
+mise run fmt:md           # Format markdown (rumdl)
+mise run vet              # go vet both modules
+mise run lint:go          # golangci-lint both modules
+mise run mod:tidy         # go mod tidy both modules
+
+# Build & test
+mise run build            # Build operator + gateway binaries
+mise run test             # Run all Go tests (race detector)
+mise run test:integration # Run operator envtest integration tests
+mise run ci               # Full CI-parity suite (what .github/workflows/ci.yml runs)
+
+# Docker images
+mise run docker:build     # Build operator + gateway images
+mise run docker:push      # Push operator + gateway images
+mise run images:examples  # Build all example agent/tool/library images
+
+# CRDs & cleanup
+mise run crds:install     # Install CRDs into the current cluster
+mise run crds:uninstall   # Remove CRDs from the current cluster
+mise run clean            # Remove build artifacts
 ```
 
 ## Running Tests
 
 ```bash
 # Run all tests with coverage
-make test
+mise run test
 
 # Run operator tests only
-make test-operator
+mise run test
 
 # Run gateway tests only
-make test-gateway
+mise run test
 
 # View coverage report
 go tool cover -html=operator/coverage.out
@@ -206,17 +188,17 @@ After modifying CRD types in `operator/api/v1alpha1/`:
 
 ```bash
 # Generate DeepCopy methods
-make generate
+mise run generate
 
 # Generate CRD manifests and RBAC
-make manifests
+mise run manifests
 ```
 
 ## Linting
 
 ```bash
 # Run linter
-make lint
+mise run lint:go
 
 # Fix common issues
 cd operator && golangci-lint run --fix ./...
@@ -409,18 +391,21 @@ kind delete cluster --name mcp-fabric
 
 ## Troubleshooting
 
-See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for common issues and solutions.
+See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for common issues and
+solutions.
 
 ## IDE Setup
 
 ### VS Code
 
 Recommended extensions:
+
 - Go (golang.go)
 - YAML (redhat.vscode-yaml)
 - Kubernetes (ms-kubernetes-tools.vscode-kubernetes-tools)
 
 Settings (`.vscode/settings.json`):
+
 ```json
 {
   "go.lintTool": "golangci-lint",

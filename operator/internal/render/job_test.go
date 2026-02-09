@@ -526,3 +526,110 @@ func TestHelperFunctions(t *testing.T) {
 	})
 
 }
+
+func TestOrchestratorJob_WorkerSidecar(t *testing.T) {
+	maxTokens := int32(4096)
+	params := OrchestratorJobParams{
+		Task: &aiv1alpha1.Task{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-task", Namespace: "default"},
+			Spec: aiv1alpha1.TaskSpec{
+				Git: &aiv1alpha1.GitConfig{
+					URL:               "https://github.com/example/repo.git",
+					CredentialsSecret: corev1.LocalObjectReference{Name: "git-creds"},
+				},
+			},
+		},
+		OrchestratorAgent: &aiv1alpha1.Agent{
+			Spec: aiv1alpha1.AgentSpec{Image: "orchestrator:v1"},
+		},
+		WorkerAgent: &aiv1alpha1.Agent{
+			ObjectMeta: metav1.ObjectMeta{Name: "code-worker", Namespace: "default"},
+			Spec: aiv1alpha1.AgentSpec{
+				Image: "worker:v1",
+				Model: aiv1alpha1.ModelConfig{ModelID: "amazon.nova-lite-v1:0", MaxTokens: &maxTokens},
+			},
+		},
+		WorkerEndpoint: LocalWorkerEndpoint(),
+		WorkspacePVC:   "test-workspace",
+		PRD:            `{}`,
+	}
+
+	job, err := OrchestratorJob(params)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// With git + worker, init containers are [git-clone, worker] in that order.
+	inits := job.Spec.Template.Spec.InitContainers
+	if len(inits) != 2 {
+		t.Fatalf("expected 2 init containers (git-clone, worker), got %d", len(inits))
+	}
+	if inits[0].Name != "git-clone" {
+		t.Errorf("expected first init container 'git-clone', got %s", inits[0].Name)
+	}
+
+	worker := inits[1]
+	if worker.Name != "worker" {
+		t.Fatalf("expected second init container 'worker', got %s", worker.Name)
+	}
+	// Must be a native sidecar so the Job completes when the orchestrator exits.
+	if worker.RestartPolicy == nil || *worker.RestartPolicy != corev1.ContainerRestartPolicyAlways {
+		t.Error("worker sidecar must set RestartPolicy=Always (native sidecar)")
+	}
+	if worker.Image != "worker:v1" {
+		t.Errorf("expected worker image 'worker:v1', got %s", worker.Image)
+	}
+	// Must share the workspace volume so edits reach the cloned repo.
+	foundWorkspace := false
+	for _, m := range worker.VolumeMounts {
+		if m.Name == "workspace" && m.MountPath == "/workspace" {
+			foundWorkspace = true
+		}
+	}
+	if !foundWorkspace {
+		t.Error("worker sidecar must mount the shared workspace volume at /workspace")
+	}
+	// Startup probe gates the orchestrator on the worker serving HTTP.
+	if worker.StartupProbe == nil || worker.StartupProbe.HTTPGet == nil || worker.StartupProbe.HTTPGet.Path != "/healthz" {
+		t.Error("worker sidecar must have a /healthz startup probe")
+	}
+	// Model config is propagated as env.
+	envByName := map[string]string{}
+	for _, e := range worker.Env {
+		envByName[e.Name] = e.Value
+	}
+	if envByName["MODEL_ID"] != "amazon.nova-lite-v1:0" {
+		t.Errorf("expected MODEL_ID env, got %q", envByName["MODEL_ID"])
+	}
+	if envByName["GIT_CONFIG_GLOBAL"] != "/workspace/.gitconfig" {
+		t.Errorf("expected GIT_CONFIG_GLOBAL for git-configured task, got %q", envByName["GIT_CONFIG_GLOBAL"])
+	}
+
+	// The orchestrator dispatches to the worker over loopback.
+	if LocalWorkerEndpoint() != "127.0.0.1:8080" {
+		t.Errorf("expected loopback worker endpoint, got %s", LocalWorkerEndpoint())
+	}
+
+	// IRSA: the Pod runs under the worker's service account.
+	if got := job.Spec.Template.Spec.ServiceAccountName; got != "code-worker" {
+		t.Errorf("expected pod service account 'code-worker' (worker SA for IRSA), got %q", got)
+	}
+}
+
+func TestOrchestratorJob_NoWorkerAgentNoSidecar(t *testing.T) {
+	params := OrchestratorJobParams{
+		Task: &aiv1alpha1.Task{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-task", Namespace: "default"},
+		},
+		OrchestratorAgent: &aiv1alpha1.Agent{Spec: aiv1alpha1.AgentSpec{Image: "orchestrator:v1"}},
+		WorkspacePVC:      "test-workspace",
+		PRD:               `{}`,
+	}
+	job, err := OrchestratorJob(params)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(job.Spec.Template.Spec.InitContainers) != 0 {
+		t.Errorf("expected no init containers without git or worker agent, got %d", len(job.Spec.Template.Spec.InitContainers))
+	}
+}

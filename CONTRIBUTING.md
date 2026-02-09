@@ -1,10 +1,12 @@
 # Contributing to MCP Fabric
 
-Thank you for your interest in contributing to MCP Fabric! This document provides guidelines and information for contributors.
+Thank you for your interest in contributing to MCP Fabric! This document
+provides guidelines and information for contributors.
 
 ## Code of Conduct
 
-Please be respectful and constructive in all interactions. We aim to maintain a welcoming environment for all contributors.
+Please be respectful and constructive in all interactions. We aim to maintain a
+welcoming environment for all contributors.
 
 ## Getting Started
 
@@ -19,12 +21,14 @@ Please be respectful and constructive in all interactions. We aim to maintain a 
 ### Development Setup
 
 1. Fork and clone the repository:
+
    ```bash
    git clone https://github.com/YOUR_USERNAME/mcp-fabric.git
    cd mcp-fabric
    ```
 
 2. Set up the development environment:
+
    ```bash
    # Install Go dependencies
    cd operator && go mod download
@@ -35,12 +39,14 @@ Please be respectful and constructive in all interactions. We aim to maintain a 
    ```
 
 3. Build and deploy locally:
+
    ```bash
    # Build images
-   make docker-build
+   mise run docker:build
 
    # Load into Kind
-   make kind-load
+   kind load docker-image ghcr.io/jalet/mcp-fabric-operator:latest \
+     ghcr.io/jalet/mcp-fabric-gateway:latest
 
    # Deploy
    kubectl apply -k deploy/kustomize/base/
@@ -52,11 +58,13 @@ Please be respectful and constructive in all interactions. We aim to maintain a 
 
 - Check existing issues before creating a new one
 - Use the issue templates when available
-- Include relevant details: Kubernetes version, error messages, reproduction steps
+- Include relevant details: Kubernetes version, error messages, reproduction
+  steps
 
 ### Submitting Changes
 
 1. Create a feature branch:
+
    ```bash
    git checkout -b feature/your-feature-name
    ```
@@ -64,16 +72,17 @@ Please be respectful and constructive in all interactions. We aim to maintain a 
 2. Make your changes following our coding standards (see below)
 
 3. Test your changes:
-   ```bash
-   # Run Go tests
-   cd operator && go test ./...
-   cd ../gateway && go test ./...
 
-   # Run integration tests (requires Kind cluster)
-   make test-e2e
+   ```bash
+   # Run all Go tests (race detector)
+   mise run test
+
+   # Run the operator envtest integration tests
+   mise run test:integration
    ```
 
 4. Commit with clear messages:
+
    ```bash
    git commit -m "feat: add support for custom health checks"
    ```
@@ -115,7 +124,7 @@ We follow conventional commits:
 
 ## Project Structure
 
-```
+```text
 mcp-fabric/
 ├── operator/           # Kubernetes operator (Go)
 │   ├── api/           # CRD type definitions
@@ -138,9 +147,11 @@ mcp-fabric/
 1. Define types in `operator/api/v1alpha1/{kind}_types.go`
 2. Register in `operator/api/v1alpha1/groupversion_info.go`
 3. Generate CRD manifests:
+
    ```bash
-   make generate
+   mise run generate
    ```
+
 4. Create controller in `operator/internal/controllers/`
 5. Register controller in `operator/cmd/manager/main.go`
 6. Add sample manifests in `deploy/samples/`
@@ -169,8 +180,8 @@ go tool cover -html=coverage.out
 ### Integration Tests
 
 ```bash
-# Requires running Kind cluster
-make test-e2e
+# Operator envtest integration tests (downloads envtest binaries on first run)
+mise run test:integration
 ```
 
 ### Manual Testing
@@ -212,4 +223,5 @@ kubectl run test-curl --rm -i --restart=Never --image=curlimages/curl -- \
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the Apache License 2.0.
+By contributing, you agree that your contributions will be licensed under the
+Apache License 2.0.

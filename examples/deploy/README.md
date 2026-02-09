@@ -4,7 +4,7 @@ Sample Kubernetes manifests for deploying example agents, tools, and routes.
 
 ## Structure
 
-```
+```text
 deploy/
 ├── agents/           # Agent CR examples
 ├── tools/            # Tool CR examples
@@ -20,6 +20,7 @@ deploy/
 1. MCP Fabric operator and gateway deployed
 2. CRDs installed
 3. AWS credentials secret created:
+
    ```bash
    kubectl -n mcp-fabric-agents create secret generic aws-bedrock-credentials \
      --from-literal=AWS_REGION=eu-north-1 \
@@ -97,7 +98,8 @@ kubectl apply -f examples/deploy/tasks/example-task.yaml
 - **Execution Limits**: Control iterations, timeouts, and consecutive failures
 - **Progress Tracking**: Persist progress via ConfigMap or PVC
 
-See the [Task CRD Reference](../../docs/CRD-REFERENCE.md) for full specification details.
+See the [Task CRD Reference](../../docs/CRD-REFERENCE.md) for full specification
+details.
 
 ## Monitoring
 
@@ -108,7 +110,8 @@ The `monitoring/` directory contains a Prometheus stack for observability:
 kubectl apply -k examples/deploy/monitoring/prometheus/
 ```
 
-See [monitoring/prometheus/README.md](monitoring/prometheus/README.md) for details.
+See [monitoring/prometheus/README.md](monitoring/prometheus/README.md) for
+details.
 
 ## Configuration
 
@@ -139,6 +142,7 @@ To customize an example:
 3. Apply to your cluster
 
 Key fields to customize:
+
 - `spec.prompt` - System prompt for the agent
 - `spec.model.modelId` - LLM model to use
 - `spec.replicas` - Number of agent pods

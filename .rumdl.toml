@@ -1,0 +1,12 @@
+[global]
+flavor = "gfm"
+line-length = 80
+# Vendored third-party content (Helm charts) — do not reformat.
+exclude = ["examples/deploy/monitoring/prometheus/charts"]
+
+[MD013]
+reflow = true
+code-blocks = false  # match mdformat: don't flag long lines inside fenced code
+
+[MD029]
+style = "ordered"

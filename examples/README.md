@@ -1,10 +1,11 @@
 # Examples
 
-This directory contains reference implementations demonstrating how to build agents, tools, and shared libraries for MCP Fabric.
+This directory contains reference implementations demonstrating how to build
+agents, tools, and shared libraries for MCP Fabric.
 
 ## Structure
 
-```
+```text
 examples/
 ├── agents/           # Example agent implementations
 ├── tools/            # Example tool packages
@@ -49,7 +50,7 @@ See [libs/README.md](libs/README.md) for details.
 
 Sample Kubernetes manifests for deploying the examples:
 
-```
+```text
 deploy/
 ├── agents/           # Agent CR examples
 ├── tools/            # Tool CR examples
@@ -66,19 +67,19 @@ Build all example images:
 
 ```bash
 # From repository root
-make examples
+mise run images:examples
 
 # Or individually
-make examples-agents
-make examples-tools
-make examples-libs
+mise run images:examples
+mise run images:examples
+mise run images:examples
 ```
 
 Build from within examples directory:
 
 ```bash
 cd examples
-make docker-build
+mise run docker:build
 ```
 
 ## Customizing

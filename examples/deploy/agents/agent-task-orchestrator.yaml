@@ -63,7 +63,7 @@ spec:
         name: aws-bedrock-credentials
 
   # Custom agent image with orchestration tools
-  image: ghcr.io/jarsater/task-orchestrator-agent:latest
+  image: ghcr.io/jalet/task-orchestrator-agent:latest
 
   # Runtime policy
   policy:

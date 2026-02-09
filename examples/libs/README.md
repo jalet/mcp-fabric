@@ -1,6 +1,7 @@
 # Shared Libraries
 
-This directory contains shared libraries that can be used across multiple agents.
+This directory contains shared libraries that can be used across multiple
+agents.
 
 ## Available Libraries
 
@@ -11,6 +12,7 @@ This directory contains shared libraries that can be used across multiple agents
 ## agent-libs
 
 Provides:
+
 - `agent_libs.logging` - JSON structured logging matching Go's zap format
 - `agent_libs.gunicorn` - Custom Gunicorn logger for JSON output
 
@@ -27,7 +29,7 @@ dependencies = [
 Or install from the container:
 
 ```dockerfile
-COPY --from=ghcr.io/jarsater/agent-libs:latest /app /tools/agent-libs
+COPY --from=ghcr.io/jalet/agent-libs:latest /app /tools/agent-libs
 ```
 
 ### JSON Logging
@@ -40,6 +42,7 @@ logger.info("message with lowercase first letter")
 ```
 
 Output format matches Go's zap logger:
+
 ```json
 {"ts": "2024-01-15T10:30:00.000Z", "level": "info", "pid": 1, "msg": "message"}
 ```
@@ -53,13 +56,14 @@ gunicorn --logger-class agent_libs.gunicorn.JSONLogger server:app
 ## Building
 
 ```bash
-make docker-build
+mise run docker:build
 ```
 
 ## Creating a New Library
 
 1. Create directory structure:
-   ```
+
+   ```text
    my-lib/
    ├── pyproject.toml
    ├── Dockerfile
@@ -69,6 +73,7 @@ make docker-build
    ```
 
 2. Build and push:
+
    ```bash
    docker build -t my-lib:latest .
    docker push my-registry/my-lib:latest
