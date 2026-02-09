@@ -94,47 +94,75 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 	agent.Status.ConfigHash = configHash
 
-	// Create/Update Deployment
-	if err := r.reconcileDeployment(ctx, &agent, configHash, agentLabels, toolPackages); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	// Create/Update Service
-	if err := r.reconcileService(ctx, &agent, agentLabels); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	// Update status
-	agent.Status.Endpoint = render.AgentEndpoint(&agent)
 	agent.Status.ObservedGeneration = agent.Generation
 
-	// Check deployment readiness
-	ready, replicas := r.checkDeploymentReady(ctx, &agent)
-	agent.Status.Ready = ready
-	agent.Status.AvailableReplicas = replicas
+	// A non-standalone agent is only used as a Task worker (co-located as a
+	// sidecar by the Task controller). Skip the standalone Deployment/Service,
+	// remove any that exist from a previous standalone configuration, and report
+	// the agent as ready-to-use config.
+	standalone := agent.Spec.Standalone == nil || *agent.Spec.Standalone
 
-	// Populate available tools from spec when agent is ready
-	if ready && len(agent.Spec.Tools) > 0 {
+	var ready bool
+	if standalone {
+		// Create/Update Deployment
+		if err := r.reconcileDeployment(ctx, &agent, configHash, agentLabels, toolPackages); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		// Create/Update Service
+		if err := r.reconcileService(ctx, &agent, agentLabels); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		agent.Status.Endpoint = render.AgentEndpoint(&agent)
+
+		// Check deployment readiness
+		var replicas int32
+		ready, replicas = r.checkDeploymentReady(ctx, &agent)
+		agent.Status.Ready = ready
+		agent.Status.AvailableReplicas = replicas
+
+		// Populate available tools from spec when agent is ready
+		if ready && len(agent.Spec.Tools) > 0 {
+			agent.Status.AvailableTools = agent.Spec.Tools
+		} else if !ready {
+			agent.Status.AvailableTools = nil
+		}
+
+		if ready {
+			r.setCondition(&agent, metav1.Condition{
+				Type:               "Ready",
+				Status:             metav1.ConditionTrue,
+				ObservedGeneration: agent.Generation,
+				Reason:             "DeploymentReady",
+				Message:            "Agent deployment is ready",
+			})
+		} else {
+			r.setCondition(&agent, metav1.Condition{
+				Type:               "Ready",
+				Status:             metav1.ConditionFalse,
+				ObservedGeneration: agent.Generation,
+				Reason:             "DeploymentNotReady",
+				Message:            "Agent deployment is not yet ready",
+			})
+		}
+	} else {
+		// Tear down any standalone workload left over from a prior configuration.
+		if err := r.deleteStandaloneWorkload(ctx, &agent); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		agent.Status.Endpoint = ""
+		agent.Status.AvailableReplicas = 0
 		agent.Status.AvailableTools = agent.Spec.Tools
-	} else if !ready {
-		agent.Status.AvailableTools = nil
-	}
-
-	if ready {
+		ready = true
+		agent.Status.Ready = true
 		r.setCondition(&agent, metav1.Condition{
 			Type:               "Ready",
 			Status:             metav1.ConditionTrue,
 			ObservedGeneration: agent.Generation,
-			Reason:             "DeploymentReady",
-			Message:            "Agent deployment is ready",
-		})
-	} else {
-		r.setCondition(&agent, metav1.Condition{
-			Type:               "Ready",
-			Status:             metav1.ConditionFalse,
-			ObservedGeneration: agent.Generation,
-			Reason:             "DeploymentNotReady",
-			Message:            "Agent deployment is not yet ready",
+			Reason:             "WorkerReady",
+			Message:            "Agent is configured as a Task worker (no standalone deployment)",
 		})
 	}
 
@@ -317,6 +345,27 @@ func (r *AgentReconciler) reconcileService(ctx context.Context, agent *aiv1alpha
 	existing.Spec = svc.Spec
 	existing.Labels = svc.Labels
 	return r.Update(ctx, existing)
+}
+
+// deleteStandaloneWorkload removes the Deployment and Service for an agent that
+// is no longer run standalone (e.g. a Task worker). Both are named after the
+// agent. Missing objects are ignored.
+func (r *AgentReconciler) deleteStandaloneWorkload(ctx context.Context, agent *aiv1alpha1.Agent) error {
+	dep := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: agent.Name, Namespace: agent.Namespace},
+	}
+	if err := r.Delete(ctx, dep); err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: agent.Name, Namespace: agent.Namespace},
+	}
+	if err := r.Delete(ctx, svc); err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+
+	return nil
 }
 
 func (r *AgentReconciler) checkDeploymentReady(ctx context.Context, agent *aiv1alpha1.Agent) (bool, int32) {

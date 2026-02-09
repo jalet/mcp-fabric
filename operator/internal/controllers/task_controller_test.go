@@ -487,46 +487,6 @@ func TestCountTasksInPRD(t *testing.T) {
 	}
 }
 
-func TestBuildWorkerEndpoint(t *testing.T) {
-	tests := []struct {
-		name     string
-		agent    *aiv1alpha1.Agent
-		expected string
-	}{
-		{
-			name: "basic agent",
-			agent: &aiv1alpha1.Agent{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "code-worker",
-					Namespace: "default",
-				},
-			},
-			expected: "http://code-worker.default:8080",
-		},
-		{
-			name: "different namespace",
-			agent: &aiv1alpha1.Agent{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "worker",
-					Namespace: "mcp-fabric",
-				},
-			},
-			expected: "http://worker.mcp-fabric:8080",
-		},
-	}
-
-	r := newTestReconciler()
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			endpoint := r.buildWorkerEndpoint(tt.agent)
-			if endpoint != tt.expected {
-				t.Errorf("expected %s, got %s", tt.expected, endpoint)
-			}
-		})
-	}
-}
-
 func TestGetOrchestratorAgent_Default(t *testing.T) {
 	// Create the default orchestrator agent
 	orchestrator := &aiv1alpha1.Agent{
@@ -1130,7 +1090,7 @@ ORCHESTRATOR_RESULT:{"passed":false,"completedTasks":2,"totalTasks":5,"iteration
 			wantErr: false,
 		},
 		{
-			name: "result with no changes",
+			name:       "result with no changes",
 			logContent: `ORCHESTRATOR_RESULT:{"passed":true,"completedTasks":0,"totalTasks":0,"iterations":1,"noChanges":true,"learnings":"No changes needed"}`,
 			wantResult: &OrchestratorResult{
 				Passed:         true,
@@ -1143,7 +1103,7 @@ ORCHESTRATOR_RESULT:{"passed":false,"completedTasks":2,"totalTasks":5,"iteration
 			wantErr: false,
 		},
 		{
-			name: "result with git push info",
+			name:       "result with git push info",
 			logContent: `ORCHESTRATOR_RESULT:{"passed":true,"completedTasks":3,"totalTasks":3,"iterations":2,"pushed":true,"commitSha":"def456"}`,
 			wantResult: &OrchestratorResult{
 				Passed:         true,
@@ -1156,7 +1116,7 @@ ORCHESTRATOR_RESULT:{"passed":false,"completedTasks":2,"totalTasks":5,"iteration
 			wantErr: false,
 		},
 		{
-			name: "result with git error",
+			name:       "result with git error",
 			logContent: `ORCHESTRATOR_RESULT:{"passed":true,"completedTasks":3,"totalTasks":3,"iterations":2,"pushed":false,"gitError":"Permission denied"}`,
 			wantResult: &OrchestratorResult{
 				Passed:         true,
@@ -1203,7 +1163,7 @@ ORCHESTRATOR_RESULT:{"passed":true,"completedTasks":5,"totalTasks":5,"iterations
 			wantErr: false,
 		},
 		{
-			name: "result with PRD field",
+			name:       "result with PRD field",
 			logContent: `ORCHESTRATOR_RESULT:{"passed":true,"completedTasks":2,"totalTasks":2,"iterations":1,"prd":{"tasks":[{"id":"1","passes":true}]}}`,
 			wantResult: &OrchestratorResult{
 				Passed:         true,

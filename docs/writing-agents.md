@@ -44,7 +44,9 @@ Or on error:
 
 ## Using the Default Agent Runner
 
-The simplest approach is to use the default agent runner (`strands-agent-runner`). It handles HTTP serving, config loading, and agent execution. You only need to create an Agent CR:
+The simplest approach is to use the default agent runner
+(`strands-agent-runner`). It handles HTTP serving, config loading, and agent
+execution. You only need to create an Agent CR:
 
 ```yaml
 apiVersion: fabric.jarsater.ai/v1alpha1
@@ -68,7 +70,7 @@ For custom logic beyond the default runner, build your own agent image.
 
 ### Project Structure
 
-```
+```text
 my-agent/
 ├── pyproject.toml
 ├── server.py
@@ -212,7 +214,8 @@ spec:
     - name: string-tools
 ```
 
-The operator will mount the tool package as an init container and load tools at runtime.
+The operator will mount the tool package as an init container and load tools at
+runtime.
 
 ### Using MCP Servers
 

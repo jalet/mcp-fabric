@@ -1,6 +1,7 @@
 # API Reference
 
-MCP Fabric Gateway exposes HTTP and MCP (Model Context Protocol) endpoints for agent invocation and management.
+MCP Fabric Gateway exposes HTTP and MCP (Model Context Protocol) endpoints for
+agent invocation and management.
 
 ## Gateway Endpoints
 
@@ -11,6 +12,7 @@ The gateway listens on port `8080` for HTTP traffic and `9090` for metrics.
 Invoke an agent with a query.
 
 **Request:**
+
 ```json
 {
   "agent": "text-assistant",
@@ -34,6 +36,7 @@ Invoke an agent with a query.
 | `metadata` | object | No | Additional metadata |
 
 **Response (Success):**
+
 ```json
 {
   "success": true,
@@ -47,6 +50,7 @@ Invoke an agent with a query.
 ```
 
 **Response (Error):**
+
 ```json
 {
   "success": false,
@@ -56,6 +60,7 @@ Invoke an agent with a query.
 ```
 
 **Status Codes:**
+
 - `200` - Success
 - `400` - Bad request (missing query, no route match with reject enabled)
 - `404` - No agent available
@@ -67,6 +72,7 @@ Invoke an agent with a query.
 List available agents.
 
 **Response:**
+
 ```json
 {
   "agents": [
@@ -82,6 +88,7 @@ List available agents.
 List active routing rules.
 
 **Response:**
+
 ```json
 {
   "routes": ["explicit-aws-api", "cost-intent", "docs-intent"],
@@ -94,6 +101,7 @@ List active routing rules.
 Health check endpoint.
 
 **Response:**
+
 ```json
 {
   "status": "ok"
@@ -102,7 +110,9 @@ Health check endpoint.
 
 ## MCP Protocol Endpoints
 
-The gateway implements the [Model Context Protocol](https://spec.modelcontextprotocol.io/) for tool discovery and invocation.
+The gateway implements the
+[Model Context Protocol](https://spec.modelcontextprotocol.io/) for tool
+discovery and invocation.
 
 ### POST /mcp
 
@@ -131,6 +141,7 @@ Initialize an MCP session.
 ```
 
 **Response:**
+
 ```json
 {
   "jsonrpc": "2.0",
@@ -163,6 +174,7 @@ List available tools from all agents.
 ```
 
 **Response:**
+
 ```json
 {
   "jsonrpc": "2.0",
@@ -222,6 +234,7 @@ Execute a tool on an agent.
 ```
 
 **Response:**
+
 ```json
 {
   "jsonrpc": "2.0",
@@ -267,7 +280,7 @@ curl -N http://localhost:8080/mcp/sse
 
 **Example Session:**
 
-```
+```text
 event: endpoint
 data: /mcp/sse?sessionId=abc123
 
@@ -281,7 +294,8 @@ data: {"jsonrpc":"2.0","id":1,"result":{...}}
 2. Else match `request.intent` against regex rules (by priority, highest first)
 3. Filter to ready backends only
 4. Select backend using:
-   - **Consistent hashing** if `tenantId` or `correlationId` provided (sticky sessions)
+   - **Consistent hashing** if `tenantId` or `correlationId` provided (sticky
+     sessions)
    - **Weighted random** otherwise
 5. Forward to agent's `/invoke` endpoint
 
@@ -296,6 +310,7 @@ Each route has a circuit breaker to prevent cascade failures:
 | `queueTimeout` | 30s | Max time in queue |
 
 When limits are exceeded:
+
 - Returns `503 Service Unavailable`
 - Error type: `queue_full` or `queue_timeout`
 
@@ -309,6 +324,7 @@ Each agent pod exposes:
 | `/healthz` | GET | Health check |
 
 **Agent /invoke Request:**
+
 ```json
 {
   "query": "What are our cloud costs?",
@@ -318,6 +334,7 @@ Each agent pod exposes:
 ```
 
 **Agent /invoke Response:**
+
 ```json
 {
   "success": true,
@@ -350,7 +367,8 @@ Each agent pod exposes:
 
 ### Routes ConfigMap
 
-The gateway reads routing rules from a ConfigMap mounted at `/etc/gateway/routes.json`:
+The gateway reads routing rules from a ConfigMap mounted at
+`/etc/gateway/routes.json`:
 
 ```json
 {

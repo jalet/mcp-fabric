@@ -81,7 +81,7 @@ spec:
         name: aws-bedrock-credentials
 
   # Custom agent image with native diagram generation tools
-  image: ghcr.io/jarsater/engineering-artist-agent:latest
+  image: ghcr.io/jalet/engineering-artist-agent:latest
 
   # Runtime policy
   policy:

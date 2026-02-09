@@ -10,6 +10,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 )
 
@@ -18,11 +19,20 @@ func WorkspacePVCName(task *aiv1alpha1.Task) string {
 	return fmt.Sprintf("%s-workspace", task.Name)
 }
 
+// LocalWorkerEndpoint returns the host:port the orchestrator uses to reach the
+// worker. The worker runs as a sidecar in the same Pod, so it is reachable on
+// loopback. The orchestrator prepends the scheme itself, so this is a bare
+// host:port.
+func LocalWorkerEndpoint() string {
+	return fmt.Sprintf("127.0.0.1:%d", AgentPort)
+}
+
 // OrchestratorJobParams holds parameters for rendering an orchestrator Job.
 type OrchestratorJobParams struct {
 	Task              *aiv1alpha1.Task
 	OrchestratorAgent *aiv1alpha1.Agent
-	WorkerEndpoint    string // e.g., "code-worker.mcp-fabric-agents:8080"
+	WorkerAgent       *aiv1alpha1.Agent // co-located as a sidecar sharing the workspace
+	WorkerEndpoint    string            // e.g., "127.0.0.1:8080"
 	WorkspacePVC      string
 	PRD               string // JSON string of the PRD
 }
@@ -59,7 +69,10 @@ func OrchestratorJob(params OrchestratorJobParams) (*batchv1.Job, error) {
 			limitsMap["maxIterations"] = *task.Spec.Limits.MaxIterations
 		}
 		if task.Spec.Limits.IterationTimeout != nil {
-			limitsMap["iterationTimeout"] = task.Spec.Limits.IterationTimeout.Duration.String()
+			// Pass as seconds so the orchestrator can use it directly as the
+			// per-task worker dispatch timeout (Go duration strings are awkward
+			// to parse in Python).
+			limitsMap["iterationTimeoutSeconds"] = task.Spec.Limits.IterationTimeout.Seconds()
 		}
 		if task.Spec.Limits.MaxConsecutiveFailures != nil {
 			limitsMap["maxConsecutiveFailures"] = *task.Spec.Limits.MaxConsecutiveFailures
@@ -150,10 +163,19 @@ func OrchestratorJob(params OrchestratorJobParams) (*batchv1.Job, error) {
 		})
 	}
 
-	// Build init containers
+	// Build init containers, in order:
+	//  1. git-clone (regular init) -- clones the repo into the shared workspace.
+	//  2. worker (native sidecar) -- starts after the clone and stays running
+	//     alongside the orchestrator, sharing /workspace so the worker's file
+	//     edits land in the cloned repo. The orchestrator reaches it on
+	//     loopback. As a native sidecar it is terminated when the orchestrator
+	//     (the Job's only regular container) exits, so the Job still completes.
 	var initContainers []corev1.Container
 	if task.Spec.Git != nil {
 		initContainers = append(initContainers, gitCloneInitContainer(task.Spec.Git))
+	}
+	if params.WorkerAgent != nil {
+		initContainers = append(initContainers, workerSidecarContainer(params.WorkerAgent, task.Spec.Git != nil))
 	}
 
 	// Build orchestrator container
@@ -225,6 +247,17 @@ func OrchestratorJob(params OrchestratorJobParams) (*batchv1.Job, error) {
 		orchestratorContainer.Resources = *agent.Spec.Resources
 	}
 
+	// IRSA: run the Pod under the worker's service account so the worker sidecar
+	// can assume its IAM role (e.g. for Bedrock). The EKS pod-identity webhook
+	// injects the web-identity token into the Pod based on this SA's role-arn
+	// annotation -- it does so independently of AutomountServiceAccountToken, so
+	// the kube-apiserver token stays unmounted. Fall back to the orchestrator's
+	// SA when no worker is co-located.
+	podServiceAccount := serviceAccountName(agent)
+	if params.WorkerAgent != nil {
+		podServiceAccount = serviceAccountName(params.WorkerAgent)
+	}
+
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      jobName,
@@ -241,6 +274,7 @@ func OrchestratorJob(params OrchestratorJobParams) (*batchv1.Job, error) {
 				},
 				Spec: corev1.PodSpec{
 					RestartPolicy:                corev1.RestartPolicyNever,
+					ServiceAccountName:           podServiceAccount,
 					AutomountServiceAccountToken: ptr.To(false),
 					SecurityContext:              podSecurityContext(),
 					InitContainers:               initContainers,
@@ -264,6 +298,59 @@ func OrchestratorJobLabels(task *aiv1alpha1.Task) map[string]string {
 		"app.kubernetes.io/managed-by": "mcp-fabric-operator",
 		"fabric.jarsater.ai/task":      task.Name,
 	}
+}
+
+// workerSidecarContainer builds the worker as a native sidecar (init container
+// with restartPolicy=Always) co-located with the orchestrator. It shares the
+// workspace volume so the worker's edits land in the cloned repo, and serves
+// HTTP on AgentPort which the orchestrator reaches over loopback.
+func workerSidecarContainer(workerAgent *aiv1alpha1.Agent, gitConfigured bool) corev1.Container {
+	env := []corev1.EnvVar{
+		{Name: "WORKSPACE_DIR", Value: "/workspace"},
+		{Name: "PYTHONUNBUFFERED", Value: "1"},
+	}
+	if workerAgent.Spec.Model.ModelID != "" {
+		env = append(env, corev1.EnvVar{Name: "MODEL_ID", Value: workerAgent.Spec.Model.ModelID})
+	}
+	if workerAgent.Spec.Model.MaxTokens != nil {
+		env = append(env, corev1.EnvVar{Name: "MAX_TOKENS", Value: fmt.Sprintf("%d", *workerAgent.Spec.Model.MaxTokens)})
+	}
+	if gitConfigured {
+		// Reuse the shared gitconfig written by the git-clone init container so
+		// any in-task commits carry the configured identity.
+		env = append(env, corev1.EnvVar{Name: "GIT_CONFIG_GLOBAL", Value: "/workspace/.gitconfig"})
+	}
+	env = append(env, workerAgent.Spec.Env...)
+
+	container := corev1.Container{
+		Name:            "worker",
+		Image:           workerAgent.Spec.Image,
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		RestartPolicy:   ptr.To(corev1.ContainerRestartPolicyAlways), // native sidecar
+		Env:             env,
+		EnvFrom:         workerAgent.Spec.EnvFrom,
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: "workspace", MountPath: "/workspace"},
+			{Name: "tmp", MountPath: "/tmp"},
+		},
+		SecurityContext: containerSecurityContext(),
+		// Gate orchestrator startup on the worker serving HTTP: native-sidecar
+		// startup probes must pass before the main container starts.
+		StartupProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path: "/healthz",
+					Port: intstr.FromInt32(AgentPort),
+				},
+			},
+			PeriodSeconds:    2,
+			FailureThreshold: 60, // allow up to ~2 minutes to start serving
+		},
+	}
+	if workerAgent.Spec.Resources != nil {
+		container.Resources = *workerAgent.Spec.Resources
+	}
+	return container
 }
 
 // DefaultGitImage is the default container image for git operations.
@@ -354,10 +441,21 @@ echo "Git setup complete. HEAD: $(git rev-parse HEAD)"
 			{Name: "git-home", MountPath: "/home/appuser"},
 			{Name: "git-credentials", MountPath: "/secrets/git", ReadOnly: true},
 		},
+		// Security context rationale (deliberate, not an oversight):
+		//   RunAsNonRoot=false  -- the default alpine/git image ships only a root
+		//     user; running as non-root would fail to start. Privilege escalation
+		//     is still blocked via AllowPrivilegeEscalation=false.
+		//   ReadOnlyRootFilesystem=false -- `git config --global` writes to the
+		//     root user's $HOME (.gitconfig) on the image's root filesystem, so a
+		//     read-only rootfs would break credential setup. Secrets are mounted
+		//     read-only and the token is sourced from a file, not env/argv.
+		// Tightening either flag requires switching to a non-root git image with
+		// a writable HOME on a mounted volume; revisit as a dedicated hardening
+		// change with an end-to-end clone test.
 		SecurityContext: &corev1.SecurityContext{
 			AllowPrivilegeEscalation: ptr.To(false),
-			RunAsNonRoot:             ptr.To(false), // Git image runs as root by default
-			ReadOnlyRootFilesystem:   ptr.To(false), // Needs to write .git-credentials
+			RunAsNonRoot:             ptr.To(false),
+			ReadOnlyRootFilesystem:   ptr.To(false),
 		},
 	}
 }
@@ -377,4 +475,3 @@ func getBoolOrDefault(b *bool, defaultVal bool) bool {
 	}
 	return *b
 }
-

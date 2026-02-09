@@ -17,10 +17,13 @@ This guide walks you through deploying MCP Fabric and creating your first agent.
 kubectl apply -f operator/config/crd/bases/
 ```
 
-This installs three Custom Resource Definitions:
+This installs the Custom Resource Definitions:
+
 - `Agent` - Defines AI agents
 - `Route` - Defines request routing rules
 - `Tool` - Defines tool packages
+- `Task` - Defines autonomous multi-step workflows (see
+  [Running Tasks](tasks.md))
 
 ### 2. Create Namespaces
 
@@ -161,9 +164,9 @@ For local development, use Kind:
 kind create cluster --name mcp-fabric --config examples/kind-config.yaml
 
 # Build and load images
-make docker-build
-kind load docker-image ghcr.io/jarsater/mcp-fabric-operator:latest --name mcp-fabric
-kind load docker-image ghcr.io/jarsater/mcp-fabric-gateway:latest --name mcp-fabric
+mise run docker:build
+kind load docker-image ghcr.io/jalet/mcp-fabric-operator:latest --name mcp-fabric
+kind load docker-image ghcr.io/jalet/mcp-fabric-gateway:latest --name mcp-fabric
 
 # Deploy
 kubectl apply -f operator/config/crd/bases/

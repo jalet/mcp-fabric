@@ -1,0 +1,261 @@
+# mise — dev tooling + task runner for mcp-fabric.
+# Docs: https://mise.jdx.dev   |   List tasks: `mise tasks`   |   Run one: `mise run <task>`
+#
+# Go monorepo: two modules (operator/, gateway/) plus Python example images.
+# PGT-standard baseline (rumdl, shellcheck) + the Go toolchain and the
+# Kubernetes operator codegen/test tooling (controller-gen, setup-envtest).
+# Tool versions are managed by Renovate (single grouped "mise tools" PR each
+# cycle).
+#
+# Note: kubectl is intentionally NOT pinned here. It is only needed for the
+# manual crds:install/crds:uninstall cluster tasks (not for build/test/ci), and
+# the aqua kubectl package currently resolves a broken dl.k8s.io URL. Those
+# tasks use whatever kubectl is already on your PATH.
+
+[settings]
+lockfile = true
+lockfile_platforms = ["macos-arm64", "linux-x64"]
+minimum_release_age = "7d"
+
+[tools]
+# go pinned to 1.24.x: satisfies both modules (operator go 1.23, gateway go 1.24)
+# and stays within golangci-lint's supported toolchain (newer Go can panic it).
+"aqua:rvben/rumdl" = "0.2.7"
+go                 = "1.24.13"
+golangci-lint      = "2.5.0"
+shellcheck         = "0.11.0"
+# controller-gen has no registry entry; install from source via the go backend.
+"go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "v0.20.0"
+setup-envtest = "0.24.1"
+
+[env]
+# Image references for the docker tasks. Override in the shell or
+# mise.local.toml as needed (these are build-time vars, never secrets).
+OPERATOR_IMG = "ghcr.io/jalet/mcp-fabric-operator:latest"
+GATEWAY_IMG  = "ghcr.io/jalet/mcp-fabric-gateway:latest"
+
+# ────────────────────────────────────────────────────────────────────────────
+# Lockfile hygiene — mise:check is the drift guard CI runs after Renovate
+# bumps or manual version changes.
+# ────────────────────────────────────────────────────────────────────────────
+
+[tasks."mise:lock"]
+description = "Regenerate mise.lock to refresh checksums and URLs for all platforms"
+run = "mise lock"
+
+[tasks."mise:check"]
+description = "Verify mise environment is healthy and mise.lock is in sync (CI: mise health)"
+depends = ["mise:lock"]
+run = '''
+mise doctor --silent
+if [ -n "$(git status --porcelain -- mise.lock)" ]; then
+  echo "mise.lock out of sync. run 'mise run mise:lock' and commit." >&2
+  git status --porcelain -- mise.lock >&2
+  echo >&2
+  echo "--- mise.lock diff (committed -> regenerated) ---" >&2
+  git --no-pager diff -- mise.lock >&2
+  exit 1
+fi
+'''
+
+# ────────────────────────────────────────────────────────────────────────────
+# Markdown formatting — ships in every PGT repo so docs stay consistent
+# across the org. rumdl is configured via .rumdl.toml (GFM, 80-col reflow).
+# ────────────────────────────────────────────────────────────────────────────
+
+[tasks."fmt:md"]
+description = "Format markdown with rumdl (gfm flavor, 80-col reflow)"
+run = "rumdl fmt ."
+
+[tasks."fmt:check"]
+description = "Verify markdown is formatted (CI-safe)"
+run = "rumdl fmt --check ."
+
+# ────────────────────────────────────────────────────────────────────────────
+# Shell — shellcheck any in-repo helpers so they don't rot. Safe no-op when
+# the repo has no scripts/ directory.
+# ────────────────────────────────────────────────────────────────────────────
+
+[tasks."lint:scripts"]
+description = "shellcheck on .mise/scripts/*.sh (no-op if no scripts)"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+shopt -s nullglob
+set -- .mise/scripts/*.sh
+if [ "$#" -eq 0 ]; then
+  echo "no shell scripts found — skipping"
+  exit 0
+fi
+shellcheck "$@"
+'''
+
+# ────────────────────────────────────────────────────────────────────────────
+# Go — build/test/lint/vet/mod hygiene across both modules (operator, gateway).
+# ────────────────────────────────────────────────────────────────────────────
+
+[tasks.build]
+description = "Compile the operator and gateway binaries"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+(cd operator && CGO_ENABLED=0 go build -o bin/manager ./cmd/manager)
+(cd gateway && CGO_ENABLED=0 go build -o bin/gateway ./cmd/gateway)
+'''
+
+[tasks.test]
+description = "Run the operator and gateway test suites with the race detector"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+for m in operator gateway; do
+  echo "== test ${m} =="
+  (cd "${m}" && go test -race -coverprofile=coverage.out ./...)
+done
+'''
+
+[tasks."test:integration"]
+description = "Run the operator envtest integration tests (downloads envtest binaries)"
+dir = "operator"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+KUBEBUILDER_ASSETS="$(setup-envtest use -p path 1.33.x)"
+export KUBEBUILDER_ASSETS
+go test -tags integration ./internal/controllers/...
+'''
+
+[tasks."lint:go"]
+description = "Run golangci-lint across both Go modules"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+for m in operator gateway; do
+  echo "== lint ${m} =="
+  (cd "${m}" && golangci-lint run ./...)
+done
+'''
+
+[tasks.vet]
+description = "Run go vet across both Go modules"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+for m in operator gateway; do (cd "${m}" && go vet ./...); done
+'''
+
+[tasks."fmt:go"]
+description = "Run gofmt across both Go modules"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+for m in operator gateway; do (cd "${m}" && go fmt ./...); done
+'''
+
+[tasks."mod:tidy"]
+description = "Refresh go.mod / go.sum in both modules"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+for m in operator gateway; do (cd "${m}" && go mod tidy); done
+'''
+
+[tasks."mod:check"]
+description = "Fail if go.mod / go.sum would change after tidy (CI-safe)"
+depends = ["mod:tidy"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+if ! git diff --exit-code -- operator/go.mod operator/go.sum gateway/go.mod gateway/go.sum; then
+  echo "go.mod / go.sum out of sync. run 'mise run mod:tidy' and commit." >&2
+  exit 1
+fi
+'''
+
+# ────────────────────────────────────────────────────────────────────────────
+# Operator code generation — controller-gen drives DeepCopy + CRD/RBAC.
+# ────────────────────────────────────────────────────────────────────────────
+
+[tasks.generate]
+description = "Generate DeepCopy methods (controller-gen object)"
+dir = "operator"
+run = "go generate ./..."
+
+[tasks.manifests]
+description = "Generate CRD and RBAC manifests (controller-gen)"
+dir = "operator"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+controller-gen crd:allowDangerousTypes=true paths="./api/..." output:crd:artifacts:config=config/crd/bases
+controller-gen rbac:roleName=mcp-fabric-operator paths="./internal/controllers/..." output:rbac:artifacts:config=config/rbac
+'''
+
+# ────────────────────────────────────────────────────────────────────────────
+# Docker — operator/gateway images and the example agent/tool/lib images.
+# ────────────────────────────────────────────────────────────────────────────
+
+[tasks."docker:build"]
+description = "Build the operator and gateway container images"
+depends = ["generate", "manifests"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+docker build --load -t "${OPERATOR_IMG}" -f operator/Dockerfile .
+docker build --load -t "${GATEWAY_IMG}" -f gateway/Dockerfile .
+'''
+
+[tasks."docker:push"]
+description = "Push the operator and gateway container images"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+docker push "${OPERATOR_IMG}"
+docker push "${GATEWAY_IMG}"
+'''
+
+[tasks."images:examples"]
+description = "Build all example agent, tool, and library images"
+dir = "examples"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+docker build --load -t ghcr.io/jalet/agent-libs:latest            -f libs/agent-libs/Dockerfile              libs/agent-libs/
+docker build --load -t ghcr.io/jalet/strands-agent-runner:latest  -f agents/default/Dockerfile               agents/default/
+docker build --load -t ghcr.io/jalet/engineering-artist-agent:latest -f agents/engineering-artist/Dockerfile agents/engineering-artist/
+docker build --load -t ghcr.io/jalet/task-orchestrator-agent:latest  -f agents/task-orchestrator/Dockerfile  agents/task-orchestrator/
+docker build --load -t ghcr.io/jalet/code-worker-agent:latest     -f agents/code-worker/Dockerfile           agents/code-worker/
+docker build --load -t ghcr.io/jalet/string-tools:latest          -f tools/string-tools/Dockerfile           tools/string-tools/
+'''
+
+# ────────────────────────────────────────────────────────────────────────────
+# CRDs — install/uninstall into the current kubectl context.
+# (requires kubectl on your PATH — not pinned by mise; see note in [tools])
+# ────────────────────────────────────────────────────────────────────────────
+
+[tasks."crds:install"]
+description = "Install operator CRDs into the current cluster"
+dir = "operator"
+run = "kubectl apply -f config/crd/bases/"
+
+[tasks."crds:uninstall"]
+description = "Remove operator CRDs from the current cluster"
+dir = "operator"
+run = "kubectl delete -f config/crd/bases/ --ignore-not-found"
+
+[tasks.clean]
+description = "Remove build artifacts and coverage output"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+rm -rf operator/bin gateway/bin
+rm -f operator/coverage.out gateway/coverage.out
+'''
+
+# ────────────────────────────────────────────────────────────────────────────
+# Aggregate — `mise run ci` is the strict suite ci.yml invokes.
+# ────────────────────────────────────────────────────────────────────────────
+
+[tasks.ci]
+description = "Run the strict CI-parity suite (this is what .github/workflows/ci.yml invokes)"
+depends = ["mise:check", "fmt:check", "lint:scripts", "mod:check", "lint:go", "build", "test"]

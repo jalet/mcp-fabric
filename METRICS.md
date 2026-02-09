@@ -1,6 +1,7 @@
 # Metrics Reference
 
-MCP Fabric exposes Prometheus metrics from both the operator and gateway components, with pre-built Grafana dashboards for visualization.
+MCP Fabric exposes Prometheus metrics from both the operator and gateway
+components, with pre-built Grafana dashboards for visualization.
 
 ## Overview
 
@@ -22,7 +23,9 @@ kubectl apply -k examples/deploy/monitoring/prometheus/
 kubectl apply -k examples/deploy/monitoring/prometheus/
 ```
 
-See [examples/deploy/monitoring/prometheus/README.md](examples/deploy/monitoring/prometheus/README.md) for detailed installation instructions.
+See
+[examples/deploy/monitoring/prometheus/README.md](examples/deploy/monitoring/prometheus/README.md)
+for detailed installation instructions.
 
 ### Access Grafana
 
@@ -148,6 +151,7 @@ Three pre-built dashboards are included:
 **UID:** `mcp-fabric-overview`
 
 Overview dashboard with key metrics:
+
 - Agents ready count
 - MCP request rate
 - Tool calls rate
@@ -161,6 +165,7 @@ Overview dashboard with key metrics:
 **UID:** `mcp-fabric-gateway`
 
 Detailed gateway and MCP protocol metrics:
+
 - Gateway request rate and error rate
 - p95 latency
 - Route misses rate
@@ -174,6 +179,7 @@ Detailed gateway and MCP protocol metrics:
 **UID:** `mcp-fabric-operator`
 
 Operator-focused metrics:
+
 - CRD ready states (Agents, Routes, Tools)
 - Agent replica tracking
 - Reconciliation rate by controller and result
@@ -184,12 +190,18 @@ Operator-focused metrics:
 
 ### Reconciliation metric label changes
 
-`mcpfabric_reconcile_total` and `mcpfabric_reconcile_duration_seconds` now include a `result` label (`success`, `error`, `requeue`) in addition to the existing `controller` label.
+`mcpfabric_reconcile_total` and `mcpfabric_reconcile_duration_seconds` now
+include a `result` label (`success`, `error`, `requeue`) in addition to the
+existing `controller` label.
 
 **Previous labels:** `["controller"]`
 **Current labels:** `["controller", "result"]`
 
-This is a breaking change for PromQL queries and alert rules that use exact label matchers against these metrics. Queries using `by (controller)` aggregation will continue to work, but queries that assumed a single-label series (e.g. bare metric selectors without aggregation) may return unexpected multiple series per controller.
+This is a breaking change for PromQL queries and alert rules that use exact
+label matchers against these metrics. Queries using `by (controller)`
+aggregation will continue to work, but queries that assumed a single-label
+series (e.g. bare metric selectors without aggregation) may return unexpected
+multiple series per controller.
 
 **Migration examples:**
 
@@ -210,7 +222,10 @@ histogram_quantile(0.95, sum by (controller, le) (rate(mcpfabric_reconcile_durat
 histogram_quantile(0.95, sum by (controller, le) (rate(mcpfabric_reconcile_duration_seconds_bucket{result="success"}[5m])))
 ```
 
-**Action required:** Review any existing Grafana dashboards, alert rules, or recording rules that reference `mcpfabric_reconcile_total` or `mcpfabric_reconcile_duration_seconds` and ensure they handle the additional `result` label dimension.
+**Action required:** Review any existing Grafana dashboards, alert rules, or
+recording rules that reference `mcpfabric_reconcile_total` or
+`mcpfabric_reconcile_duration_seconds` and ensure they handle the additional
+`result` label dimension.
 
 ## PromQL Query Examples
 
@@ -390,7 +405,8 @@ spec:
 
 ## ServiceMonitor Configuration
 
-The gateway and operator expose metrics endpoints. ServiceMonitors are included in the Kustomize deployment:
+The gateway and operator expose metrics endpoints. ServiceMonitors are included
+in the Kustomize deployment:
 
 ### Gateway ServiceMonitor
 
@@ -443,11 +459,13 @@ spec:
 ### Metrics Not Appearing
 
 1. Check ServiceMonitor is created:
+
    ```bash
    kubectl get servicemonitors -A
    ```
 
 2. Verify Prometheus is scraping the target:
+
    ```bash
    # Port forward to Prometheus
    kubectl port-forward -n monitoring svc/prometheus-kube-prometheus-prometheus 9090:9090
@@ -455,6 +473,7 @@ spec:
    ```
 
 3. Check service labels match ServiceMonitor selector:
+
    ```bash
    kubectl get svc -n mcp-fabric-gateway --show-labels
    ```
@@ -462,11 +481,13 @@ spec:
 ### Dashboards Not Loading
 
 1. Check dashboard ConfigMap has correct labels:
+
    ```bash
    kubectl get configmaps -n monitoring -l grafana_dashboard=1
    ```
 
 2. Check Grafana sidecar logs:
+
    ```bash
    kubectl logs -n monitoring -l app.kubernetes.io/name=grafana -c grafana-sc-dashboard
    ```
@@ -481,6 +502,7 @@ If metrics cardinality is too high:
 
 1. Limit label values in application code
 2. Use recording rules to pre-aggregate:
+
    ```yaml
    groups:
      - name: mcp-fabric.aggregations

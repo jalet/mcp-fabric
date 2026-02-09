@@ -1,6 +1,8 @@
 # Prometheus Monitoring for MCP Fabric
 
-This folder contains configuration for deploying [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack) to monitor MCP Fabric components.
+This folder contains configuration for deploying
+[kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack)
+to monitor MCP Fabric components.
 
 ## Prerequisites
 
@@ -28,6 +30,7 @@ kustomize build --enable-helm deploy/samples/prometheus | kubectl apply -f -
 ```
 
 This script will:
+
 1. Add the prometheus-community Helm repo
 2. Create a `monitoring` namespace
 3. Install kube-prometheus-stack with MCP Fabric-optimized settings
@@ -39,7 +42,8 @@ This script will:
 kubectl port-forward -n monitoring svc/prometheus-grafana 3000:80
 ```
 
-Open http://localhost:3000 and log in with:
+Open <http://localhost:3000> and log in with:
+
 - Username: `admin`
 - Password: `admin`
 
@@ -49,11 +53,11 @@ Open http://localhost:3000 and log in with:
 kubectl port-forward -n monitoring svc/prometheus-kube-prometheus-prometheus 9090:9090
 ```
 
-Open http://localhost:9090
+Open <http://localhost:9090>
 
 ## Verifying Metrics Collection
 
-1. Open Prometheus UI at http://localhost:9090
+1. Open Prometheus UI at <http://localhost:9090>
 2. Go to **Status > Targets**
 3. Look for targets with labels:
    - `mcp-fabric-operator` - Operator controller metrics
@@ -62,6 +66,7 @@ Open http://localhost:9090
 ## Metrics Reference
 
 For complete metrics documentation including:
+
 - All available metrics by component
 - PromQL query examples
 - Alert rules
@@ -71,9 +76,11 @@ See [METRICS.md](/METRICS.md).
 
 ## Grafana Dashboard
 
-The `dashboards/` folder contains a pre-built dashboard for MCP Fabric. It's automatically loaded by the Grafana sidecar when you run `install.sh`.
+The `dashboards/` folder contains a pre-built dashboard for MCP Fabric. It's
+automatically loaded by the Grafana sidecar when you run `install.sh`.
 
 Dashboard panels include:
+
 - **Overview**: Agent status, request rates, error rates
 - **Operator**: Reconciliation metrics by controller
 - **Gateway**: Request latency, circuit breaker state
@@ -125,16 +132,19 @@ kubectl delete namespace monitoring
 ### Targets Not Appearing
 
 1. Verify ServiceMonitor resources exist:
+
    ```bash
    kubectl get servicemonitors -A
    ```
 
 2. Check Prometheus operator logs:
+
    ```bash
    kubectl logs -n monitoring -l app.kubernetes.io/name=prometheus-operator
    ```
 
 3. Verify services have correct labels:
+
    ```bash
    kubectl get svc -A -l app.kubernetes.io/name=mcp-fabric-operator
    kubectl get svc -A -l app.kubernetes.io/name=agent-gateway
@@ -143,12 +153,14 @@ kubectl delete namespace monitoring
 ### No Metrics Data
 
 1. Verify pods are running:
+
    ```bash
    kubectl get pods -n mcp-fabric-system
    kubectl get pods -n mcp-fabric-gateway
    ```
 
 2. Test metrics endpoint directly:
+
    ```bash
    kubectl port-forward -n mcp-fabric-system svc/mcp-fabric-operator-metrics 8080:8080
    curl http://localhost:8080/metrics
@@ -157,11 +169,13 @@ kubectl delete namespace monitoring
 ### Dashboard Not Loading
 
 1. Check Grafana sidecar logs:
+
    ```bash
    kubectl logs -n monitoring -l app.kubernetes.io/name=grafana -c grafana-sc-dashboard
    ```
 
 2. Verify ConfigMap exists:
+
    ```bash
    kubectl get configmap mcp-fabric-dashboard -n monitoring
    ```

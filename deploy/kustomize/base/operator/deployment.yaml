@@ -24,7 +24,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: manager
-          image: ghcr.io/jarsater/mcp-fabric-operator:latest
+          image: ghcr.io/jalet/mcp-fabric-operator:latest
           imagePullPolicy: IfNotPresent
           args:
             - --leader-elect=false

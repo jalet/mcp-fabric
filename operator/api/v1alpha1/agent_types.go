@@ -157,6 +157,16 @@ type AgentSpec struct {
 	// +optional
 	Replicas *int32 `json:"replicas,omitempty"`
 
+	// Standalone controls whether the operator runs this agent as a long-running
+	// Deployment + Service. Defaults to true. Set to false for agents that are
+	// only used as Task workers: the Task controller co-locates them as a
+	// sidecar in the orchestrator Job, so no standalone Deployment/Service is
+	// created. A ServiceAccount and ConfigMap are still reconciled so the
+	// sidecar can run (e.g. under an IRSA-annotated service account).
+	// +kubebuilder:default=true
+	// +optional
+	Standalone *bool `json:"standalone,omitempty"`
+
 	// Resources defines compute resource requirements.
 	// +optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`

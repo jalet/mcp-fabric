@@ -1,10 +1,15 @@
 # Architecture
 
-MCP Fabric is a Kubernetes-native platform for deploying AI agents declaratively.
+MCP Fabric is a Kubernetes-native platform for deploying AI agents
+declaratively.
+
+> Rendered Mermaid diagrams (system overview, CRD relationships, task
+> orchestration, etc.) live in
+> [diagrams/architecture.md](diagrams/architecture.md).
 
 ## System Overview
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                   mcp-fabric-gateway namespace              │
 │  ┌─────────────────┐    ┌─────────────────────────────────┐ │
@@ -38,10 +43,13 @@ MCP Fabric is a Kubernetes-native platform for deploying AI agents declaratively
 
 ### Operator
 
-The operator is a Kubernetes controller that watches for Agent, Route, and Tool CRs and reconciles the desired state.
+The operator is a Kubernetes controller that watches for Agent, Route, and Tool
+CRs and reconciles the desired state.
 
 **Responsibilities:**
-- Watch Agent CRs and create/update Deployments, Services, ConfigMaps, NetworkPolicies
+
+- Watch Agent CRs and create/update Deployments, Services, ConfigMaps,
+  NetworkPolicies
 - Watch Route CRs and compile routing rules into a ConfigMap for the gateway
 - Watch Tool CRs and validate tool package references
 
@@ -60,6 +68,7 @@ The operator is a Kubernetes controller that watches for Agent, Route, and Tool 
 The gateway is an HTTP server that routes requests to appropriate agent pods.
 
 **Responsibilities:**
+
 - Accept HTTP requests at `/v1/invoke`
 - Match requests to agents via routing rules
 - Load balance across agent replicas
@@ -75,9 +84,11 @@ The gateway is an HTTP server that routes requests to appropriate agent pods.
 
 ### Agent Runtime
 
-The agent runtime executes agent logic. The default runtime uses Python with the Strands AI framework.
+The agent runtime executes agent logic. The default runtime uses Python with the
+Strands AI framework.
 
 **Contract:**
+
 - `GET /healthz` - Health check endpoint
 - `POST /invoke` - Agent invocation endpoint
 
@@ -139,6 +150,74 @@ spec:
   entryModule: my_tools.tools
 ```
 
+### Task
+
+Defines an autonomous, multi-step execution loop. The operator runs an
+orchestrator Job that iterates over a PRD, dispatching each item to a worker
+agent and optionally committing the result to Git.
+
+```yaml
+apiVersion: fabric.jarsater.ai/v1alpha1
+kind: Task
+metadata:
+  name: implement-feature
+spec:
+  workerRef:
+    name: code-worker
+  taskSource:
+    type: configmap
+    configMapRef:
+      name: example-prd
+      key: prd.json
+  git:
+    url: https://github.com/example/repo.git
+    credentialsSecret:
+      name: github-credentials
+  qualityGates:
+    - name: test
+      command: ["go", "test", "./..."]
+```
+
+## Task Orchestration
+
+A `Task` runs as a single Kubernetes Job, not a long-running Deployment. The
+orchestrator and worker are **co-located in one Pod** so they share a workspace
+volume:
+
+```text
+Task CR
+  │
+  ▼
+Operator (Task controller)
+  ├─► Reconcile workspace PVC (per-Task, ReadWriteOnce)
+  ├─► Load PRD from ConfigMap/Secret/inline; count items
+  └─► Create orchestrator Job
+        ┌─────────────────────────── Job Pod ───────────────────────────┐
+        │ initContainers (ordered):                                      │
+        │   1. git-clone   — clones the repo into /workspace             │
+        │   2. worker      — native sidecar (restartPolicy: Always),     │
+        │                    serves HTTP on :8080, shares /workspace     │
+        │ container:                                                     │
+        │   orchestrator   — loops over the PRD, dispatches each item to │
+        │                    the worker at 127.0.0.1:8080, runs quality  │
+        │                    gates, then commits/pushes/opens a PR       │
+        └────────────────────────────────────────────────────────────────┘
+  │
+  ▼
+Operator reads the orchestrator's result from the Job logs, updates
+Task.status (phase, progress, commit SHA, PR URL), and cleans up on deletion.
+```
+
+Key points:
+
+- The worker is selected by `workerRef` and pinned with `standalone: false` so
+  the agent controller does **not** also deploy it standalone.
+- The Pod runs under the worker's ServiceAccount so the worker can use **IRSA**
+  for model access (e.g. Bedrock); annotate that SA with
+  `eks.amazonaws.com/role-arn`.
+- The worker is a native sidecar, so it is terminated when the orchestrator
+  (the Job's only regular container) exits — the Job still completes.
+
 ## Security Model
 
 ### Pod Security
@@ -177,7 +256,7 @@ envFrom:
 
 ### Request Flow
 
-```
+```text
 Client
   │
   ▼
@@ -211,7 +290,7 @@ Response → Gateway → Client
 
 ### Configuration Flow
 
-```
+```text
 Agent CR
   │
   ▼
@@ -236,15 +315,18 @@ New Agent Pods (with updated config)
 
 ### Config Hash for Rolling Updates
 
-The operator hashes ConfigMap content and stores it in a Deployment annotation. When config changes, the hash changes, triggering a rolling update.
+The operator hashes ConfigMap content and stores it in a Deployment annotation.
+When config changes, the hash changes, triggering a rolling update.
 
 ### Owner References
 
-All resources created by the operator have owner references to the parent CR. When the CR is deleted, Kubernetes garbage collects all owned resources.
+All resources created by the operator have owner references to the parent CR.
+When the CR is deleted, Kubernetes garbage collects all owned resources.
 
 ### Circuit Breaker
 
 The gateway implements circuit breaker pattern with:
+
 - Maximum concurrent requests per agent
 - Request queue with timeout
 - Fail-fast when overloaded

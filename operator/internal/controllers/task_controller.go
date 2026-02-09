@@ -47,7 +47,7 @@ const (
 	taskFinalizer = "fabric.jarsater.ai/task-cleanup"
 
 	// Maximum Job recreations before failing
-	maxJobRecreations = 3
+	maxJobRecreations       = 3
 	jobRecreationAnnotation = "fabric.jarsater.ai/job-recreations"
 )
 
@@ -171,9 +171,12 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		int(task.Status.CompletedTasks),
 		int(task.Status.TotalTasks),
 	)
-	if err != nil {
+	switch {
+	case err != nil:
 		metrics.RecordReconcile(metrics.ControllerTask, metrics.ResultError, time.Since(startTime).Seconds())
-	} else {
+	case result.Requeue || result.RequeueAfter > 0:
+		metrics.RecordReconcile(metrics.ControllerTask, metrics.ResultRequeue, time.Since(startTime).Seconds())
+	default:
 		metrics.RecordReconcile(metrics.ControllerTask, metrics.ResultSuccess, time.Since(startTime).Seconds())
 	}
 
@@ -245,14 +248,13 @@ func (r *TaskReconciler) handlePendingPhase(ctx context.Context, task *aiv1alpha
 	// Count total tasks in PRD
 	totalTasks := r.countTasksInPRD(prdContent)
 
-	// Build worker endpoint from agent spec
-	workerEndpoint := r.buildWorkerEndpoint(workerAgent)
-
-	// Create orchestrator Job
+	// Create orchestrator Job. The worker runs as a sidecar in the same Pod
+	// (sharing the workspace), so the orchestrator reaches it over loopback.
 	jobParams := render.OrchestratorJobParams{
 		Task:              task,
 		OrchestratorAgent: orchestratorAgent,
-		WorkerEndpoint:    workerEndpoint,
+		WorkerAgent:       workerAgent,
+		WorkerEndpoint:    render.LocalWorkerEndpoint(),
 		WorkspacePVC:      render.WorkspacePVCName(task),
 		PRD:               prdContent,
 	}
@@ -351,7 +353,8 @@ func (r *TaskReconciler) handleRunningPhase(ctx context.Context, task *aiv1alpha
 			recreations := 0
 			if task.Annotations != nil {
 				if v, ok := task.Annotations[jobRecreationAnnotation]; ok {
-					fmt.Sscanf(v, "%d", &recreations)
+					// Best-effort parse; a malformed value leaves recreations at 0.
+					_, _ = fmt.Sscanf(v, "%d", &recreations)
 				}
 			}
 			recreations++
@@ -609,7 +612,7 @@ func (r *TaskReconciler) getOrchestratorResult(ctx context.Context, job *batchv1
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pod logs: %w", err)
 	}
-	defer logs.Close()
+	defer func() { _ = logs.Close() }()
 
 	// Scan line-by-line and track the last line containing the result marker.
 	var resultLine string
@@ -720,25 +723,21 @@ func (r *TaskReconciler) getAgent(ctx context.Context, ref aiv1alpha1.AgentRefer
 	return &agent, nil
 }
 
-// buildWorkerEndpoint builds the worker HTTP endpoint from agent spec.
-func (r *TaskReconciler) buildWorkerEndpoint(agent *aiv1alpha1.Agent) string {
-	// Build endpoint from agent name and namespace
-	// Format: http://{name}.{namespace}:8080
-	// Using default port 8080 as agents expose this port
-	return fmt.Sprintf("http://%s.%s:8080", agent.Name, agent.Namespace)
-}
-
 // PRDDocument represents the structure of a PRD JSON document.
+//
+// "stories" is the canonical field consumed by the orchestrator; "tasks" is
+// accepted as an alias. The orchestrator's get_stories() applies the same
+// precedence (stories first, then tasks) so the operator's task count and the
+// work the orchestrator actually executes stay in agreement.
 type PRDDocument struct {
-	Tasks []struct {
-		ID    string `json:"id"`
-		Title string `json:"title"`
-	} `json:"tasks"`
-	// Alternative structure: some PRDs may use "stories" instead of "tasks"
 	Stories []struct {
 		ID    string `json:"id"`
 		Title string `json:"title"`
 	} `json:"stories"`
+	Tasks []struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	} `json:"tasks"`
 }
 
 // countTasksInPRD counts the total number of tasks in the PRD using proper JSON parsing.
@@ -749,10 +748,10 @@ func (r *TaskReconciler) countTasksInPRD(prdContent string) int {
 		return 0
 	}
 
-	// Check both "tasks" and "stories" fields for flexibility
-	taskCount := len(prd.Tasks)
+	// Prefer the canonical "stories" field, falling back to the "tasks" alias.
+	taskCount := len(prd.Stories)
 	if taskCount == 0 {
-		taskCount = len(prd.Stories)
+		taskCount = len(prd.Tasks)
 	}
 
 	return taskCount
@@ -891,7 +890,14 @@ func (r *TaskReconciler) persistUpdatedPRD(ctx context.Context, task *aiv1alpha1
 		return fmt.Errorf("failed to get ConfigMap %s: %w", cmName, err)
 	}
 
-	// Update the PRD content
+	// Do NOT set a controller owner reference on this ConfigMap: it is supplied
+	// by the user, not created by this controller. Owning it would make
+	// Kubernetes garbage-collect the user's PRD when the Task is deleted, and
+	// the call also fails outright if the ConfigMap is already owned by another
+	// object. We only update the PRD content in place.
+	if cm.Data == nil {
+		cm.Data = map[string]string{}
+	}
 	cm.Data[key] = updatedPRD
 
 	// Update the ConfigMap
@@ -909,9 +915,13 @@ func (r *TaskReconciler) setCondition(task *aiv1alpha1.Task, condition metav1.Co
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *TaskReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// Note: the PRD ConfigMap is intentionally not watched via Owns(). It is a
+	// user-supplied object the controller must not own (owning it would cause
+	// GC to delete the user's PRD on Task deletion). Only resources the
+	// controller creates itself -- the workspace PVC and orchestrator Job --
+	// are owned.
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&aiv1alpha1.Task{}).
-		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.PersistentVolumeClaim{}).
 		Owns(&batchv1.Job{}).
 		Named("task").

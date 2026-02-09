@@ -118,6 +118,9 @@ type GitConfig struct {
 	URL string `json:"url"`
 
 	// Provider is the Git hosting provider (github, gitlab, bitbucket).
+	// Note: automatic pull-request creation (CreatePR) is currently only
+	// implemented for GitHub. For gitlab/bitbucket the branch is pushed but no
+	// PR is opened automatically.
 	// +kubebuilder:default=github
 	// +optional
 	Provider GitProvider `json:"provider,omitempty"`
@@ -195,7 +198,9 @@ type QualityGate struct {
 	Command []string `json:"command"`
 
 	// FailurePolicy determines what happens if the gate fails.
-	// +kubebuilder:validation:Enum=Fail;Retry;Ignore
+	//   Fail   -- a failing gate marks the task as not passed.
+	//   Ignore -- a failing gate is recorded but does not block the task.
+	// +kubebuilder:validation:Enum=Fail;Ignore
 	// +kubebuilder:default=Fail
 	// +optional
 	FailurePolicy string `json:"failurePolicy,omitempty"`

@@ -65,9 +65,19 @@ def extract_context_from_query(query: str) -> str:
     return ""
 
 
+def get_stories(prd: dict) -> list:
+    """Return the work items from a PRD.
+
+    The canonical field is "stories", but the operator's task counter also
+    accepts "tasks" as an alias. Accept both here so a PRD authored with
+    "tasks" is actually executed instead of silently producing no work.
+    """
+    return prd.get("stories") or prd.get("tasks") or []
+
+
 def get_next_task(prd: dict) -> dict | None:
     """Find the highest-priority incomplete task from the PRD."""
-    stories = prd.get("stories", [])
+    stories = get_stories(prd)
     if not stories:
         return None
 
@@ -148,7 +158,10 @@ def run_quality_gates(quality_gates: list[dict]) -> tuple[bool, list[dict]]:
         name = gate.get("name", "unnamed")
         command = gate.get("command", [])
         timeout_str = gate.get("timeout", "60s")
+        # Supported policies: "Fail" (blocks the task) and "Ignore" (recorded
+        # only). Any other/legacy value is treated as "Fail" -- the safe default.
         failure_policy = gate.get("failurePolicy", "Fail")
+        blocks_on_failure = failure_policy != "Ignore"
 
         # Parse timeout (e.g., "30s", "2m")
         timeout_seconds = 60
@@ -177,7 +190,7 @@ def run_quality_gates(quality_gates: list[dict]) -> tuple[bool, list[dict]]:
                 "stderr": result.stderr[:2000] if result.stderr else "",
             }
 
-            if not passed and failure_policy == "Fail":
+            if not passed and blocks_on_failure:
                 all_passed = False
 
             results.append(gate_result)
@@ -189,7 +202,7 @@ def run_quality_gates(quality_gates: list[dict]) -> tuple[bool, list[dict]]:
                 "passed": False,
                 "error": f"Timed out after {timeout_seconds}s",
             }
-            if failure_policy == "Fail":
+            if blocks_on_failure:
                 all_passed = False
             results.append(gate_result)
             logger.error(f"Quality gate '{name}' timed out")
@@ -200,7 +213,7 @@ def run_quality_gates(quality_gates: list[dict]) -> tuple[bool, list[dict]]:
                 "passed": False,
                 "error": f"Command not found: {command[0] if command else 'empty'}",
             }
-            if failure_policy == "Fail":
+            if blocks_on_failure:
                 all_passed = False
             results.append(gate_result)
             logger.error(f"Quality gate '{name}' command not found")
@@ -211,7 +224,7 @@ def run_quality_gates(quality_gates: list[dict]) -> tuple[bool, list[dict]]:
                 "passed": False,
                 "error": str(e),
             }
-            if failure_policy == "Fail":
+            if blocks_on_failure:
                 all_passed = False
             results.append(gate_result)
             logger.error(f"Quality gate '{name}' failed: {e}")
@@ -221,7 +234,7 @@ def run_quality_gates(quality_gates: list[dict]) -> tuple[bool, list[dict]]:
 
 def update_prd_task_status(prd: dict, task_id: str, passed: bool) -> dict:
     """Update the status of a task in the PRD."""
-    stories = prd.get("stories", [])
+    stories = get_stories(prd)
     for story in stories:
         if story.get("id") == task_id:
             story["passes"] = passed
@@ -231,7 +244,7 @@ def update_prd_task_status(prd: dict, task_id: str, passed: bool) -> dict:
 
 def check_all_complete(prd: dict) -> bool:
     """Check if all tasks in the PRD are complete."""
-    stories = prd.get("stories", [])
+    stories = get_stories(prd)
     if not stories:
         return False
     return all(s.get("passes", False) for s in stories)
@@ -385,7 +398,7 @@ def invoke():
 
 def generate_commit_message(prd: dict, task_name: str) -> str:
     """Generate a commit message summarizing completed tasks."""
-    stories = prd.get("stories", [])
+    stories = get_stories(prd)
     completed = [s for s in stories if s.get("passes", False)]
     total = len(stories)
 
@@ -513,7 +526,19 @@ def finalize_git(git_config: dict, prd: dict, task_name: str) -> dict:
 
 
 def create_pull_request(git_config: dict, prd: dict, task_name: str) -> str | None:
-    """Create PR using GitHub CLI."""
+    """Create PR using the GitHub CLI.
+
+    Only GitHub is supported for automatic PR creation. For other providers the
+    branch is still pushed (see finalize_git), but the PR must be opened
+    manually.
+    """
+    provider = (git_config.get("provider") or "github").lower()
+    if provider != "github":
+        logger.warning(
+            "Automatic PR creation is only supported for GitHub; "
+            f"provider '{provider}' pushed the branch but will not open a PR"
+        )
+        return None
     try:
         # Get PR title
         title = git_config.get("prTitle", "").replace("{task}", task_name)
@@ -558,7 +583,9 @@ def create_pull_request(git_config: dict, prd: dict, task_name: str) -> str | No
         return None
 
 
-def dispatch_to_worker_with_endpoint(task: dict, context: str, worker_endpoint: str) -> dict:
+def dispatch_to_worker_with_endpoint(
+    task: dict, context: str, worker_endpoint: str, timeout_seconds: float = 600.0
+) -> dict:
     """Dispatch a task to the worker agent using specified endpoint."""
     task_id = task.get("id", "unknown")
     task_title = task.get("title", "Unknown Task")
@@ -588,7 +615,7 @@ ID: {task_id}
 """
 
     try:
-        with httpx.Client(timeout=600.0) as client:  # 10 minute timeout for worker
+        with httpx.Client(timeout=timeout_seconds) as client:  # per-task iteration timeout
             response = client.post(
                 f"http://{worker_endpoint}/invoke",
                 json={"query": worker_query, "metadata": {"taskId": task_id}},
@@ -647,10 +674,14 @@ def run_job_mode():
 
     max_iterations = limits.get("maxIterations", 100)
     max_consecutive_failures = limits.get("maxConsecutiveFailures", 3)
+    # Per-task dispatch timeout. Defaults to the CRD default of 30m (1800s)
+    # when the operator did not supply a value.
+    iteration_timeout_seconds = float(limits.get("iterationTimeoutSeconds", 1800))
 
     logger.info(f"Task: {task_name}")
     logger.info(f"Worker endpoint: {worker_endpoint}")
     logger.info(f"Max iterations: {max_iterations}")
+    logger.info(f"Iteration timeout: {iteration_timeout_seconds}s")
     logger.info(f"Quality gates: {len(quality_gates)}")
     logger.info(f"Git configured: {git_config is not None}")
 
@@ -682,7 +713,9 @@ def run_job_mode():
         logger.info(f"Processing: {task_id} - {task_title}")
 
         # Dispatch to worker
-        worker_result = dispatch_to_worker_with_endpoint(task, context, worker_endpoint)
+        worker_result = dispatch_to_worker_with_endpoint(
+            task, context, worker_endpoint, timeout_seconds=iteration_timeout_seconds
+        )
 
         if not worker_result.get("success"):
             consecutive_failures += 1

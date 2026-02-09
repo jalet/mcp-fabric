@@ -58,6 +58,17 @@ spec:
     }
     ```
 
+  # This agent is only used as a Task worker: the Task controller co-locates it
+  # as a sidecar in the orchestrator Job. Setting standalone=false tells the
+  # operator not to create a redundant Deployment/Service for it.
+  standalone: false
+
+  # With serviceAccountName left unset, the operator creates a ServiceAccount
+  # named after the agent ("code-worker"). The Task Job pod runs under it, so
+  # annotate it for IRSA to grant Bedrock access (operator preserves annotations):
+  #   kubectl annotate sa code-worker -n mcp-fabric-agents \
+  #     eks.amazonaws.com/role-arn=arn:aws:iam::<account>:role/<bedrock-role>
+
   # LLM model configuration
   model:
     provider: bedrock
@@ -80,7 +91,7 @@ spec:
         name: github-credentials
 
   # Custom agent image with filesystem tools
-  image: ghcr.io/jarsater/code-worker-agent:latest
+  image: ghcr.io/jalet/code-worker-agent:latest
 
   # Runtime policy
   policy:

@@ -2,7 +2,8 @@
 
 ## Reporting a Vulnerability
 
-We take security seriously. If you discover a security vulnerability in MCP Fabric, please report it responsibly.
+We take security seriously. If you discover a security vulnerability in MCP
+Fabric, please report it responsibly.
 
 ### How to Report
 
@@ -85,7 +86,8 @@ kubectl create secret generic aws-bedrock-credentials \
 
 ### 2. Network Policies
 
-Ensure your cluster has a CNI that supports NetworkPolicies (Calico, Cilium, etc.):
+Ensure your cluster has a CNI that supports NetworkPolicies (Calico, Cilium,
+etc.):
 
 ```bash
 # Verify NetworkPolicy support
@@ -169,7 +171,8 @@ Security patches are released as soon as fixes are available. Monitor:
 
 ## Compliance
 
-MCP Fabric can be configured to meet various compliance requirements. Consult with your compliance team for specific guidance on:
+MCP Fabric can be configured to meet various compliance requirements. Consult
+with your compliance team for specific guidance on:
 
 - SOC 2
 - HIPAA

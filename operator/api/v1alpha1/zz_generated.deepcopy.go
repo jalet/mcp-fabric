@@ -166,6 +166,11 @@ func (in *AgentSpec) DeepCopyInto(out *AgentSpec) {
 		*out = new(int32)
 		**out = **in
 	}
+	if in.Standalone != nil {
+		in, out := &in.Standalone, &out.Standalone
+		*out = new(bool)
+		**out = **in
+	}
 	if in.Resources != nil {
 		in, out := &in.Resources, &out.Resources
 		*out = new(corev1.ResourceRequirements)

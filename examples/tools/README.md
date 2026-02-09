@@ -1,18 +1,19 @@
 # Tool Packages
 
-This directory contains Tool packages - bundles of Python functions that can be attached to agents.
+This directory contains Tool packages - bundles of Python functions that can be
+attached to agents.
 
 ## Available Tool Packages
 
 | Package | Image | Description |
 |---------|-------|-------------|
-| `string-tools` | `ghcr.io/jarsater/string-tools:latest` | String manipulation utilities |
+| `string-tools` | `ghcr.io/jalet/string-tools:latest` | String manipulation utilities |
 
 ## Creating a New Tool Package
 
 ### 1. Directory Structure
 
-```
+```text
 tools/
 └── my-tools/
     ├── pyproject.toml      # Python dependencies
@@ -99,7 +100,7 @@ USER 65534:65534
 CMD ["python", "-c", "from my_tools.tools import *; print('Tools loaded successfully')"]
 ```
 
-### 5. __init__.py
+### 5. **init**.py
 
 Export your tools:
 
@@ -114,18 +115,13 @@ __all__ = ["my_function", "another_function"]
 ### 6. Build and Test
 
 ```bash
-# Add to tools/Makefile
-MY_TOOLS_IMG ?= ghcr.io/jarsater/my-tools:latest
-
-.PHONY: docker-build-my-tools
-docker-build-my-tools:
-    docker build --load -t $(MY_TOOLS_IMG) -f my-tools/Dockerfile my-tools/
-
-# Build
-cd tools && make docker-build-my-tools
+# Build (add the build line to the images:examples task in mise.toml, or
+# build directly):
+docker build --load -t ghcr.io/jalet/my-tools:latest \
+  -f tools/my-tools/Dockerfile tools/my-tools/
 
 # Test locally
-docker run --rm ghcr.io/jarsater/my-tools:latest
+docker run --rm ghcr.io/jalet/my-tools:latest
 ```
 
 ### 7. Create Tool CRD
@@ -137,7 +133,7 @@ metadata:
   name: my-tools
   namespace: mcp-fabric-agents
 spec:
-  image: ghcr.io/jarsater/my-tools:latest
+  image: ghcr.io/jalet/my-tools:latest
   imagePullPolicy: IfNotPresent
   entryModule: my_tools.tools
   tools:
@@ -179,20 +175,25 @@ spec:
 
 ## Best Practices
 
-1. **Type Hints**: Always use type hints on function parameters and return values
-2. **Docstrings**: Include clear docstrings - the LLM uses these to understand when to call tools
+1. **Type Hints**: Always use type hints on function parameters and return
+   values
+2. **Docstrings**: Include clear docstrings - the LLM uses these to understand
+   when to call tools
 3. **Args Section**: Document each parameter in the Args section of docstrings
 4. **Returns Section**: Document what the function returns
-5. **Simple Types**: Prefer simple types (str, int, dict, list) for inputs/outputs
+5. **Simple Types**: Prefer simple types (str, int, dict, list) for
+   inputs/outputs
 6. **Error Handling**: Raise exceptions with clear messages for error cases
 7. **Stateless**: Tools should be stateless - no global state between calls
 
 ## Tool Discovery
 
 The operator:
+
 1. Loads the tool image as an init container
 2. Imports the `entryModule` (e.g., `my_tools.tools`)
 3. Discovers all `@tool` decorated functions
 4. Exposes them to the agent
 
-Tools declared in `spec.tools` are used for MCP protocol discovery. If not specified, tools are discovered at runtime.
+Tools declared in `spec.tools` are used for MCP protocol discovery. If not
+specified, tools are discovered at runtime.

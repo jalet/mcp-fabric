@@ -15,10 +15,10 @@ import (
 
 const (
 	// DefaultAgentRunnerImage is the default strands-agent-runner image.
-	DefaultAgentRunnerImage = "ghcr.io/jarsater/strands-agent-runner:latest"
+	DefaultAgentRunnerImage = "ghcr.io/jalet/strands-agent-runner:latest"
 
 	// AgentLibsImage is the shared agent libraries image (logging, etc).
-	AgentLibsImage = "ghcr.io/jarsater/agent-libs:latest"
+	AgentLibsImage = "ghcr.io/jalet/agent-libs:latest"
 
 	// AgentConfigMountPath is where the agent config is mounted.
 	AgentConfigMountPath = "/etc/agent/config"

@@ -1,6 +1,8 @@
 package render
 
 import (
+	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -37,5 +39,5 @@ func AgentService(agent *aiv1alpha1.Agent, labels map[string]string) *corev1.Ser
 
 // AgentEndpoint returns the fully qualified service endpoint for an agent.
 func AgentEndpoint(agent *aiv1alpha1.Agent) string {
-	return agent.Name + "." + agent.Namespace + ".svc.cluster.local:" + "8080"
+	return fmt.Sprintf("%s.%s.svc.cluster.local:%d", agent.Name, agent.Namespace, AgentPort)
 }
