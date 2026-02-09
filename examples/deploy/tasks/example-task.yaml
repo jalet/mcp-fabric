@@ -72,11 +72,6 @@ spec:
     totalTimeout: 4h
     maxConsecutiveFailures: 3
 
-  # Completion detection
-  completion:
-    signal: "<promise>COMPLETE</promise>"
-    checkInterval: 10s
-
   # Additional context for the orchestrator
   context: |
     This is an example task that demonstrates the full Task feature.

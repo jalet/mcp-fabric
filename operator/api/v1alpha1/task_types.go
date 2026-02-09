@@ -68,33 +68,6 @@ type TaskSource struct {
 	Inline string `json:"inline,omitempty"`
 }
 
-// ProgressTrackingType specifies the type of progress storage.
-// +kubebuilder:validation:Enum=configmap;pvc;none
-type ProgressTrackingType string
-
-const (
-	ProgressTrackingTypeConfigMap ProgressTrackingType = "configmap"
-	ProgressTrackingTypePVC       ProgressTrackingType = "pvc"
-	ProgressTrackingTypeNone      ProgressTrackingType = "none"
-)
-
-// ProgressTracking defines how to persist progress between iterations.
-type ProgressTracking struct {
-	// Type of progress storage.
-	// +kubebuilder:validation:Required
-	// +kubebuilder:default=configmap
-	Type ProgressTrackingType `json:"type"`
-
-	// ConfigMapRef references a ConfigMap to store progress.
-	// The ConfigMap will be created if it doesn't exist.
-	// +optional
-	ConfigMapRef *corev1.ConfigMapKeySelector `json:"configMapRef,omitempty"`
-
-	// PVCRef references a PersistentVolumeClaim for progress storage.
-	// +optional
-	PVCRef *corev1.LocalObjectReference `json:"pvcRef,omitempty"`
-}
-
 // TaskLimits defines execution constraints.
 type TaskLimits struct {
 	// MaxIterations is the maximum number of loop iterations.
@@ -118,19 +91,6 @@ type TaskLimits struct {
 	// +kubebuilder:default=3
 	// +optional
 	MaxConsecutiveFailures *int32 `json:"maxConsecutiveFailures,omitempty"`
-}
-
-// CompletionConfig defines how to detect task completion.
-type CompletionConfig struct {
-	// Signal is the string to search for in agent response indicating completion.
-	// +kubebuilder:default="<promise>COMPLETE</promise>"
-	// +optional
-	Signal string `json:"signal,omitempty"`
-
-	// CheckInterval is how often to check for completion during iteration.
-	// +kubebuilder:default="5s"
-	// +optional
-	CheckInterval *metav1.Duration `json:"checkInterval,omitempty"`
 }
 
 // GitProvider specifies the Git hosting provider.
@@ -255,17 +215,9 @@ type TaskSpec struct {
 	// +kubebuilder:validation:Required
 	TaskSource TaskSource `json:"taskSource"`
 
-	// ProgressTracking defines how to persist progress between iterations.
-	// +optional
-	ProgressTracking *ProgressTracking `json:"progressTracking,omitempty"`
-
 	// Limits defines execution constraints.
 	// +optional
 	Limits *TaskLimits `json:"limits,omitempty"`
-
-	// Completion defines how to detect task completion.
-	// +optional
-	Completion *CompletionConfig `json:"completion,omitempty"`
 
 	// QualityGates defines commands to run as quality checks after each task.
 	// +optional
