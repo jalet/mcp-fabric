@@ -126,6 +126,17 @@ var (
 		[]string{"route", "reason"},
 	)
 
+	// CircuitBreakerStateChangesTotal counts state transitions
+	CircuitBreakerStateChangesTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystemCircuit,
+			Name:      "state_changes_total",
+			Help:      "Total number of circuit breaker state transitions",
+		},
+		[]string{"route", "from_state", "to_state"},
+	)
+
 	// CircuitBreakerState shows circuit state (0=closed, 1=open)
 	CircuitBreakerState = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -173,6 +184,17 @@ var (
 		[]string{"method"},
 	)
 
+	// MCPErrorsTotal counts MCP errors by type
+	MCPErrorsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystemMCP,
+			Name:      "errors_total",
+			Help:      "Total number of MCP errors by type",
+		},
+		[]string{"method", "transport", "error_type"},
+	)
+
 	// MCPToolsListTotal counts tools/list invocations
 	MCPToolsListTotal = prometheus.NewCounter(
 		prometheus.CounterOpts{
@@ -213,10 +235,12 @@ func init() {
 		CircuitBreakerWaiting,
 		CircuitBreakerRejections,
 		CircuitBreakerState,
+		CircuitBreakerStateChangesTotal,
 		// MCP metrics
 		MCPConnectionsActive,
 		MCPRequestsTotal,
 		MCPRequestDuration,
+		MCPErrorsTotal,
 		MCPToolsListTotal,
 		MCPToolsCallTotal,
 	)
@@ -281,6 +305,16 @@ func SetCircuitBreakerState(route string, open bool) {
 		val = 1.0
 	}
 	CircuitBreakerState.WithLabelValues(route).Set(val)
+}
+
+// RecordCircuitBreakerStateChange records a circuit breaker state transition
+func RecordCircuitBreakerStateChange(route, fromState, toState string) {
+	CircuitBreakerStateChangesTotal.WithLabelValues(route, fromState, toState).Inc()
+}
+
+// RecordMCPError records an MCP error
+func RecordMCPError(method, transport, errorType string) {
+	MCPErrorsTotal.WithLabelValues(method, transport, errorType).Inc()
 }
 
 // SetMCPConnectionsActive sets the active MCP connection count
