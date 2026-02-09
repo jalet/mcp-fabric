@@ -86,7 +86,7 @@
       },
       "targets": [
         {
-          "expr": "sum(mcpfabric_agentroute_ready)",
+          "expr": "sum(mcpfabric_route_backends_ready)",
           "legendFormat": "Routes",
           "refId": "A"
         }
@@ -121,12 +121,12 @@
       },
       "targets": [
         {
-          "expr": "sum(mcpfabric_toolpackage_ready)",
-          "legendFormat": "ToolPackages",
+          "expr": "sum(mcpfabric_tool_ready)",
+          "legendFormat": "Tools",
           "refId": "A"
         }
       ],
-      "title": "ToolPackages Ready",
+      "title": "Tools Ready",
       "type": "stat"
     },
     {
@@ -265,7 +265,7 @@
       "collapsed": false,
       "gridPos": {"h": 1, "w": 24, "x": 0, "y": 12},
       "id": 102,
-      "title": "AgentRoute CRDs",
+      "title": "Route CRDs",
       "type": "row"
     },
     {
@@ -299,12 +299,12 @@
       },
       "targets": [
         {
-          "expr": "mcpfabric_agentroute_ready",
+          "expr": "mcpfabric_route_backends_ready",
           "legendFormat": "{{name}}",
           "refId": "A"
         }
       ],
-      "title": "AgentRoute Status",
+      "title": "Route Status",
       "type": "stat"
     },
     {
@@ -336,7 +336,7 @@
       },
       "targets": [
         {
-          "expr": "mcpfabric_agentroute_tools_count",
+          "expr": "mcpfabric_route_rules_count",
           "legendFormat": "{{name}}",
           "refId": "A"
         }
@@ -348,7 +348,7 @@
       "collapsed": false,
       "gridPos": {"h": 1, "w": 24, "x": 0, "y": 19},
       "id": 103,
-      "title": "ToolPackage CRDs",
+      "title": "Tool CRDs",
       "type": "row"
     },
     {
@@ -382,12 +382,12 @@
       },
       "targets": [
         {
-          "expr": "mcpfabric_toolpackage_ready",
+          "expr": "mcpfabric_tool_ready",
           "legendFormat": "{{name}}",
           "refId": "A"
         }
       ],
-      "title": "ToolPackage Status",
+      "title": "Tool Status",
       "type": "stat"
     },
     {
@@ -419,7 +419,7 @@
       },
       "targets": [
         {
-          "expr": "mcpfabric_toolpackage_tools_count",
+          "expr": "mcpfabric_tool_definitions_count",
           "legendFormat": "{{name}}",
           "refId": "A"
         }
@@ -622,7 +622,7 @@
       },
       "targets": [
         {
-          "expr": "workqueue_depth{name=~\"agent|agentroute|toolpackage\"}",
+          "expr": "workqueue_depth{name=~\"agent|route|tool\"}",
           "legendFormat": "{{name}}",
           "refId": "A"
         }

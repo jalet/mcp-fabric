@@ -168,12 +168,12 @@
       },
       "targets": [
         {
-          "expr": "sum(mcpfabric_toolpackage_ready)",
+          "expr": "sum(mcpfabric_tool_ready)",
           "legendFormat": "Ready",
           "refId": "A"
         }
       ],
-      "title": "ToolPackages Ready",
+      "title": "Tools Ready",
       "type": "stat"
     },
     {
