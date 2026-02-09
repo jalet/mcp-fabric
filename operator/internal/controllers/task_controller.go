@@ -720,12 +720,12 @@ func (r *TaskReconciler) getAgent(ctx context.Context, ref aiv1alpha1.AgentRefer
 	return &agent, nil
 }
 
-// buildWorkerEndpoint builds the worker HTTP endpoint from agent spec.
+// buildWorkerEndpoint builds the worker endpoint from agent spec.
 func (r *TaskReconciler) buildWorkerEndpoint(agent *aiv1alpha1.Agent) string {
 	// Build endpoint from agent name and namespace
-	// Format: http://{name}.{namespace}:8080
+	// Format: {name}.{namespace}:8080
 	// Using default port 8080 as agents expose this port
-	return fmt.Sprintf("http://%s.%s:8080", agent.Name, agent.Namespace)
+	return fmt.Sprintf("%s.%s:8080", agent.Name, agent.Namespace)
 }
 
 // PRDDocument represents the structure of a PRD JSON document.
@@ -889,6 +889,11 @@ func (r *TaskReconciler) persistUpdatedPRD(ctx context.Context, task *aiv1alpha1
 	var cm corev1.ConfigMap
 	if err := r.Get(ctx, types.NamespacedName{Name: cmName, Namespace: task.Namespace}, &cm); err != nil {
 		return fmt.Errorf("failed to get ConfigMap %s: %w", cmName, err)
+	}
+
+	// Ensure the Task owns this ConfigMap so the Owns watch triggers.
+	if err := controllerutil.SetControllerReference(task, &cm, r.Scheme); err != nil {
+		return fmt.Errorf("failed to set controller reference on ConfigMap %s: %w", cmName, err)
 	}
 
 	// Update the PRD content
