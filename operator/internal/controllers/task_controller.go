@@ -45,6 +45,10 @@ const (
 
 	// Finalizer for Task cleanup
 	taskFinalizer = "fabric.jarsater.ai/task-cleanup"
+
+	// Maximum Job recreations before failing
+	maxJobRecreations = 3
+	jobRecreationAnnotation = "fabric.jarsater.ai/job-recreations"
 )
 
 // TaskReconciler reconciles a Task object.
@@ -343,13 +347,40 @@ func (r *TaskReconciler) handleRunningPhase(ctx context.Context, task *aiv1alpha
 	var job batchv1.Job
 	if err := r.Get(ctx, types.NamespacedName{Name: jobName, Namespace: task.Namespace}, &job); err != nil {
 		if errors.IsNotFound(err) {
-			logger.Info("Orchestrator Job not found, creating", "job", jobName)
-			// Job was deleted or never created, go back to pending
+			// Track recreation count to prevent infinite loops
+			recreations := 0
+			if task.Annotations != nil {
+				if v, ok := task.Annotations[jobRecreationAnnotation]; ok {
+					fmt.Sscanf(v, "%d", &recreations)
+				}
+			}
+			recreations++
+
+			if recreations > maxJobRecreations {
+				logger.Info("Max Job recreations exceeded, failing task", "job", jobName, "recreations", recreations)
+				task.Status.Phase = aiv1alpha1.TaskPhaseFailed
+				task.Status.Message = fmt.Sprintf("Orchestrator Job lost %d times, giving up", recreations-1)
+				now := metav1.Now()
+				task.Status.CompletedAt = &now
+				if err := r.Status().Update(ctx, task); err != nil {
+					return ctrl.Result{}, err
+				}
+				return ctrl.Result{}, nil
+			}
+
+			logger.Info("Orchestrator Job not found, recreating", "job", jobName, "recreation", recreations)
+			if task.Annotations == nil {
+				task.Annotations = map[string]string{}
+			}
+			task.Annotations[jobRecreationAnnotation] = fmt.Sprintf("%d", recreations)
+			if err := r.Update(ctx, task); err != nil {
+				return ctrl.Result{}, err
+			}
 			task.Status.Phase = aiv1alpha1.TaskPhasePending
 			if err := r.Status().Update(ctx, task); err != nil {
 				return ctrl.Result{}, err
 			}
-			return ctrl.Result{Requeue: true}, nil
+			return ctrl.Result{RequeueAfter: failureRequeueDelay}, nil
 		}
 		return ctrl.Result{}, err
 	}
@@ -563,8 +594,10 @@ func (r *TaskReconciler) getOrchestratorResult(ctx context.Context, job *batchv1
 
 	// Get logs from the orchestrator container
 	pod := podList.Items[0]
+	tailLines := int64(1000)
 	req := r.Clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
 		Container: "orchestrator",
+		TailLines: &tailLines,
 	})
 
 	logs, err := req.Stream(ctx)
