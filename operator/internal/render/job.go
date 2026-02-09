@@ -278,7 +278,8 @@ mkdir -p /home/appuser
 GIT_TOKEN=$(cat /secrets/git/token)
 
 git config --global credential.helper store
-echo "https://x-access-token:${GIT_TOKEN}@github.com" > /home/appuser/.git-credentials
+GIT_HOST=$(echo "${GIT_URL}" | sed -E 's|^https?://([^/]+).*|\1|')
+echo "https://x-access-token:${GIT_TOKEN}@${GIT_HOST}" > /home/appuser/.git-credentials
 chmod 600 /home/appuser/.git-credentials
 git config --global user.name "${GIT_AUTHOR}"
 git config --global user.email "${GIT_EMAIL}"
