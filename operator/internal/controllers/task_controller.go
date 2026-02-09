@@ -642,22 +642,6 @@ func (r *TaskReconciler) handleDeletion(ctx context.Context, task *aiv1alpha1.Ta
 		// Continue with cleanup even if PVC deletion fails
 	}
 
-	// Clean up progress ConfigMap if using configmap progress tracking
-	if task.Spec.ProgressTracking != nil &&
-		task.Spec.ProgressTracking.Type == aiv1alpha1.ProgressTrackingTypeConfigMap &&
-		task.Spec.ProgressTracking.ConfigMapRef != nil {
-		cm := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      task.Spec.ProgressTracking.ConfigMapRef.Name,
-				Namespace: task.Namespace,
-			},
-		}
-		if err := r.Delete(ctx, cm); err != nil && !errors.IsNotFound(err) {
-			logger.Error(err, "Failed to delete progress ConfigMap", "configMap", cm.Name)
-			// Continue with cleanup even if ConfigMap deletion fails
-		}
-	}
-
 	// Remove finalizer
 	controllerutil.RemoveFinalizer(task, taskFinalizer)
 	if err := r.Update(ctx, task); err != nil {

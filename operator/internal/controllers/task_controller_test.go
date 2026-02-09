@@ -975,63 +975,6 @@ func TestHandleDeletion_CleansUpResources(t *testing.T) {
 	// the task since it had a deletionTimestamp. In real Kubernetes, this is the expected behavior.
 }
 
-func TestHandleDeletion_CleansUpProgressConfigMap(t *testing.T) {
-	now := metav1.Now()
-	task := &aiv1alpha1.Task{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:              "test-task",
-			Namespace:         "default",
-			Finalizers:        []string{taskFinalizer},
-			DeletionTimestamp: &now,
-		},
-		Spec: aiv1alpha1.TaskSpec{
-			WorkerRef: aiv1alpha1.AgentReference{Name: "worker"},
-			TaskSource: aiv1alpha1.TaskSource{
-				Type:   aiv1alpha1.TaskSourceTypeInline,
-				Inline: `{"tasks":[]}`,
-			},
-			ProgressTracking: &aiv1alpha1.ProgressTracking{
-				Type: aiv1alpha1.ProgressTrackingTypeConfigMap,
-				ConfigMapRef: &corev1.ConfigMapKeySelector{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: "test-task-progress",
-					},
-					Key: "progress.json",
-				},
-			},
-		},
-		Status: aiv1alpha1.TaskStatus{
-			Phase: aiv1alpha1.TaskPhaseRunning,
-		},
-	}
-
-	// Create progress ConfigMap that should be cleaned up
-	progressCM := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-task-progress",
-			Namespace: "default",
-		},
-		Data: map[string]string{
-			"progress.json": `{"completed":5}`,
-		},
-	}
-
-	r := newTestReconciler(task, progressCM)
-	ctx := context.Background()
-
-	_, err := r.handleDeletion(ctx, task)
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-
-	// Verify progress ConfigMap was deleted
-	var deletedCM corev1.ConfigMap
-	err = r.Get(ctx, types.NamespacedName{Name: "test-task-progress", Namespace: "default"}, &deletedCM)
-	if err == nil {
-		t.Error("expected progress ConfigMap to be deleted")
-	}
-}
-
 func TestHandleDeletion_NoFinalizerNoOp(t *testing.T) {
 	now := metav1.Now()
 	// Task with a DIFFERENT finalizer (not ours) - this simulates the case where
