@@ -20,6 +20,8 @@ Example agent implementations using the Strands AI framework:
 |-------|-------------|
 | `default/` | Default agent runner for Agent CRs without custom images |
 | `engineering-artist/` | Architecture diagram generation |
+| `task-orchestrator/` | Orchestrates Task execution, manages progress, and dispatches work to workers |
+| `code-worker/` | Implements individual tasks from the orchestrator with code changes |
 
 See [agents/README.md](agents/README.md) for details.
 
@@ -52,6 +54,7 @@ deploy/
 ├── agents/           # Agent CR examples
 ├── tools/            # Tool CR examples
 ├── routes/           # Route CR examples
+├── tasks/            # Task CR examples
 └── monitoring/       # Prometheus stack
 ```
 

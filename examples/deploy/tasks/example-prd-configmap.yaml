@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: example-prd
+  namespace: mcp-fabric-agents
+data:
+  prd.json: |
+    {
+      "project": "simple-task",
+      "description": "Clone a repository, make changes, and push",
+      "stories": [
+        {
+          "id": "task-001",
+          "title": "Clone the repository",
+          "priority": 1,
+          "passes": false,
+          "acceptanceCriteria": [
+            "Clone the repository https://github.com/jalet/mcp-fabric-test into the workspace",
+            "The workspace should contain the cloned repository files"
+          ]
+        },
+        {
+          "id": "task-002",
+          "title": "Create hello.txt",
+          "priority": 2,
+          "passes": false,
+          "acceptanceCriteria": [
+            "Create a file named hello.txt in the repository",
+            "The file should contain 'Hello, World!'"
+          ]
+        },
+        {
+          "id": "task-003",
+          "title": "Commit and push changes",
+          "priority": 3,
+          "passes": false,
+          "acceptanceCriteria": [
+            "Stage all files using git add",
+            "Create a commit with message 'nananana batman'",
+            "Push the commit to the remote repository"
+          ]
+        }
+      ]
+    }

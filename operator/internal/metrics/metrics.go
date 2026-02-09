@@ -3,6 +3,7 @@ package metrics
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
@@ -14,6 +15,7 @@ const (
 	ControllerAgent = "agent"
 	ControllerTool  = "tool"
 	ControllerRoute = "route"
+	ControllerTask  = "task"
 
 	// Result labels
 	ResultSuccess = "success"
@@ -23,7 +25,7 @@ const (
 
 var (
 	// DurationBuckets for request/reconciliation durations
-	DurationBuckets = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}
+	DurationBuckets = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 15, 30, 60, 120}
 
 	// ReconcileTotal counts total reconciliations per controller
 	ReconcileTotal = prometheus.NewCounterVec(
@@ -43,7 +45,7 @@ var (
 			Help:      "Duration of reconciliation in seconds",
 			Buckets:   DurationBuckets,
 		},
-		[]string{"controller"},
+		[]string{"controller", "result"},
 	)
 
 	// ReconcileErrors counts errors by type
@@ -145,9 +147,53 @@ var (
 		},
 		[]string{"name", "namespace"},
 	)
+
+	// TaskInfo provides task metadata (always 1)
+	TaskInfo = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "task_info",
+			Help:      "Task metadata information (value is always 1)",
+		},
+		[]string{"name", "namespace", "phase"},
+	)
+
+	// TaskIteration shows current iteration number
+	TaskIteration = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "task_iteration",
+			Help:      "Current iteration number for the task",
+		},
+		[]string{"name", "namespace"},
+	)
+
+	// TaskCompletedTasks shows completed task count
+	TaskCompletedTasks = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "task_completed_tasks",
+			Help:      "Number of completed tasks",
+		},
+		[]string{"name", "namespace"},
+	)
+
+	// TaskTotalTasks shows total task count
+	TaskTotalTasks = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "task_total_tasks",
+			Help:      "Total number of tasks in the PRD",
+		},
+		[]string{"name", "namespace"},
+	)
 )
 
 func init() {
+	// Register Go runtime and process collectors
+	metrics.Registry.MustRegister(collectors.NewGoCollector())
+	metrics.Registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+
 	// Register all metrics with controller-runtime's global registry
 	metrics.Registry.MustRegister(
 		ReconcileTotal,
@@ -162,13 +208,17 @@ func init() {
 		ToolDefinitionsCount,
 		RouteRulesCount,
 		RouteBackendsReady,
+		TaskInfo,
+		TaskIteration,
+		TaskCompletedTasks,
+		TaskTotalTasks,
 	)
 }
 
 // RecordReconcile records a reconciliation attempt
 func RecordReconcile(controller, result string, duration float64) {
 	ReconcileTotal.WithLabelValues(controller, result).Inc()
-	ReconcileDuration.WithLabelValues(controller).Observe(duration)
+	ReconcileDuration.WithLabelValues(controller, result).Observe(duration)
 }
 
 // RecordReconcileError records a reconciliation error
@@ -202,8 +252,7 @@ func DeleteAgentMetrics(name, namespace string) {
 	AgentReplicas.DeleteLabelValues(name, namespace)
 	AgentReplicasAvailable.DeleteLabelValues(name, namespace)
 	AgentToolsCount.DeleteLabelValues(name, namespace)
-	// Note: AgentInfo has more labels, so we can't easily delete it
-	// It will be overwritten on next reconcile or stale after deletion
+	AgentInfo.DeletePartialMatch(prometheus.Labels{"name": name, "namespace": namespace})
 }
 
 // SetToolMetrics updates Tool metrics
@@ -232,4 +281,22 @@ func SetRouteMetrics(name, namespace string, rulesCount, backendsReady int) {
 func DeleteRouteMetrics(name, namespace string) {
 	RouteRulesCount.DeleteLabelValues(name, namespace)
 	RouteBackendsReady.DeleteLabelValues(name, namespace)
+}
+
+// SetTaskMetrics updates Task metrics
+func SetTaskMetrics(name, namespace, phase string, iteration, completedTasks, totalTasks int) {
+	// Clear any previous phase series to avoid stale gauges
+	TaskInfo.DeletePartialMatch(prometheus.Labels{"name": name, "namespace": namespace})
+	TaskInfo.WithLabelValues(name, namespace, phase).Set(1)
+	TaskIteration.WithLabelValues(name, namespace).Set(float64(iteration))
+	TaskCompletedTasks.WithLabelValues(name, namespace).Set(float64(completedTasks))
+	TaskTotalTasks.WithLabelValues(name, namespace).Set(float64(totalTasks))
+}
+
+// DeleteTaskMetrics removes metrics for a deleted Task
+func DeleteTaskMetrics(name, namespace string) {
+	TaskIteration.DeleteLabelValues(name, namespace)
+	TaskCompletedTasks.DeleteLabelValues(name, namespace)
+	TaskTotalTasks.DeleteLabelValues(name, namespace)
+	TaskInfo.DeletePartialMatch(prometheus.Labels{"name": name, "namespace": namespace})
 }

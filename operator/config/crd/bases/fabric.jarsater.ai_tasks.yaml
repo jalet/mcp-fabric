@@ -1,0 +1,492 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.0
+  name: tasks.fabric.jarsater.ai
+spec:
+  group: fabric.jarsater.ai
+  names:
+    kind: Task
+    listKind: TaskList
+    plural: tasks
+    shortNames:
+    - tk
+    singular: task
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: Task phase
+      jsonPath: .status.phase
+      name: Phase
+      type: string
+    - description: Current iteration
+      jsonPath: .status.currentIteration
+      name: Iteration
+      type: integer
+    - description: Completed tasks
+      jsonPath: .status.completedTasks
+      name: Progress
+      type: string
+    - description: Total tasks
+      jsonPath: .status.totalTasks
+      name: Total
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          Task defines an autonomous task execution loop following the Ralph pattern.
+          It orchestrates repeated AI agent iterations until all PRD items are complete.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: TaskSpec defines the desired state of Task.
+            properties:
+              context:
+                description: Context provides additional context to pass to the orchestrator.
+                type: string
+              git:
+                description: |-
+                  Git defines Git repository settings for the task workspace.
+                  When configured, the repo is cloned before execution and changes are pushed on completion.
+                properties:
+                  autoPush:
+                    default: true
+                    description: AutoPush enables automatic push on completion.
+                    type: boolean
+                  baseBranch:
+                    description: |-
+                      BaseBranch is the branch to create the working branch from (for feature branches).
+                      If set, creates a new branch from BaseBranch before starting work.
+                    type: string
+                  branch:
+                    default: main
+                    description: Branch is the branch to work on.
+                    type: string
+                  commitAuthor:
+                    default: MCP Fabric Task
+                    description: CommitAuthor is the author name for commits.
+                    type: string
+                  commitEmail:
+                    default: task@mcp-fabric.local
+                    description: CommitEmail is the author email for commits.
+                    type: string
+                  createPR:
+                    default: true
+                    description: CreatePR enables automatic PR creation on completion.
+                    type: boolean
+                  credentialsSecret:
+                    description: |-
+                      CredentialsSecret references a Secret containing git credentials.
+                      Required key: "token" (GitHub PAT or equivalent).
+                    properties:
+                      name:
+                        default: ""
+                        description: |-
+                          Name of the referent.
+                          This field is effectively required, but due to backwards compatibility is
+                          allowed to be empty. Instances of this type with an empty value here are
+                          almost certainly wrong.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  depth:
+                    default: 1
+                    description: Depth for shallow clone (0 = full clone).
+                    format: int32
+                    type: integer
+                  draftPR:
+                    default: true
+                    description: DraftPR creates PR as draft.
+                    type: boolean
+                  image:
+                    default: alpine/git:2.43
+                    description: Image is the container image to use for git operations.
+                    type: string
+                  prBody:
+                    description: |-
+                      PRBody is the body template for the PR.
+                      Supports placeholders: {task}, {completed}, {total}.
+                    type: string
+                  prTitle:
+                    description: 'PRTitle is the title for the PR (default: "Task:
+                      {task-name}").'
+                    type: string
+                  provider:
+                    default: github
+                    description: Provider is the Git hosting provider (github, gitlab,
+                      bitbucket).
+                    enum:
+                    - github
+                    - gitlab
+                    - bitbucket
+                    type: string
+                  url:
+                    description: URL is the repository URL to clone.
+                    minLength: 1
+                    type: string
+                required:
+                - credentialsSecret
+                - url
+                type: object
+              limits:
+                description: Limits defines execution constraints.
+                properties:
+                  iterationTimeout:
+                    default: 30m
+                    description: IterationTimeout is the maximum duration for a single
+                      iteration.
+                    type: string
+                  maxConsecutiveFailures:
+                    default: 3
+                    description: MaxConsecutiveFailures is the number of consecutive
+                      failures before pausing/failing.
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  maxIterations:
+                    default: 100
+                    description: MaxIterations is the maximum number of loop iterations.
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  maxJobRecreations:
+                    description: |-
+                      MaxJobRecreations is the maximum number of times a lost Job will be recreated
+                      before the task is marked as failed.
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  totalTimeout:
+                    default: 24h
+                    description: TotalTimeout is the maximum total duration for the
+                      entire task.
+                    type: string
+                type: object
+              orchestratorRef:
+                description: |-
+                  OrchestratorRef references the orchestrator agent that manages task execution.
+                  If not specified, defaults to "task-orchestrator" in the same namespace.
+                properties:
+                  name:
+                    description: Name of the Agent resource.
+                    minLength: 1
+                    type: string
+                  namespace:
+                    description: Namespace of the Agent (defaults to Task namespace).
+                    type: string
+                required:
+                - name
+                type: object
+              paused:
+                default: false
+                description: Paused indicates the task should not run iterations (for
+                  manual review).
+                type: boolean
+              qualityGates:
+                description: QualityGates defines commands to run as quality checks
+                  after each task.
+                items:
+                  description: QualityGate defines a command to run as a quality check.
+                  properties:
+                    command:
+                      description: Command is the command to execute.
+                      items:
+                        type: string
+                      minItems: 1
+                      type: array
+                    failurePolicy:
+                      default: Fail
+                      description: FailurePolicy determines what happens if the gate
+                        fails.
+                      enum:
+                      - Fail
+                      - Retry
+                      - Ignore
+                      type: string
+                    name:
+                      description: Name identifies this quality gate.
+                      minLength: 1
+                      type: string
+                    timeout:
+                      default: 5m
+                      description: Timeout for the quality gate command.
+                      type: string
+                  required:
+                  - command
+                  - name
+                  type: object
+                type: array
+              taskSource:
+                description: TaskSource defines where to read the PRD/task list from.
+                properties:
+                  configMapRef:
+                    description: ConfigMapRef references a ConfigMap containing the
+                      PRD.
+                    properties:
+                      key:
+                        description: The key to select.
+                        type: string
+                      name:
+                        default: ""
+                        description: |-
+                          Name of the referent.
+                          This field is effectively required, but due to backwards compatibility is
+                          allowed to be empty. Instances of this type with an empty value here are
+                          almost certainly wrong.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                      optional:
+                        description: Specify whether the ConfigMap or its key must
+                          be defined
+                        type: boolean
+                    required:
+                    - key
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  inline:
+                    description: Inline contains the PRD directly in the spec.
+                    type: string
+                  secretRef:
+                    description: SecretRef references a Secret containing the PRD.
+                    properties:
+                      key:
+                        description: The key of the secret to select from.  Must be
+                          a valid secret key.
+                        type: string
+                      name:
+                        default: ""
+                        description: |-
+                          Name of the referent.
+                          This field is effectively required, but due to backwards compatibility is
+                          allowed to be empty. Instances of this type with an empty value here are
+                          almost certainly wrong.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                      optional:
+                        description: Specify whether the Secret or its key must be
+                          defined
+                        type: boolean
+                    required:
+                    - key
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  type:
+                    default: configmap
+                    description: Type of the task source.
+                    enum:
+                    - configmap
+                    - secret
+                    - inline
+                    type: string
+                required:
+                - type
+                type: object
+              workerRef:
+                description: WorkerRef references the agent that executes individual
+                  tasks.
+                properties:
+                  name:
+                    description: Name of the Agent resource.
+                    minLength: 1
+                    type: string
+                  namespace:
+                    description: Namespace of the Agent (defaults to Task namespace).
+                    type: string
+                required:
+                - name
+                type: object
+            required:
+            - taskSource
+            - workerRef
+            type: object
+          status:
+            description: TaskStatus defines the observed state of Task.
+            properties:
+              completedAt:
+                description: CompletedAt is when the task completed (successfully
+                  or with failure).
+                format: date-time
+                type: string
+              completedTasks:
+                description: CompletedTasks is the number of tasks marked as passed.
+                format: int32
+                type: integer
+              conditions:
+                description: Conditions represent the latest available observations.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              consecutiveFailures:
+                description: ConsecutiveFailures is the current count of consecutive
+                  failures.
+                format: int32
+                type: integer
+              currentIteration:
+                description: CurrentIteration is the current/last iteration number.
+                format: int32
+                type: integer
+              lastCommitSha:
+                description: LastCommitSHA is the SHA of the most recent commit.
+                type: string
+              lastIterationAt:
+                description: LastIterationAt is when the last iteration ran.
+                format: date-time
+                type: string
+              lastTaskId:
+                description: LastTaskID is the ID of the last attempted task.
+                type: string
+              message:
+                description: Message provides additional status information.
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the last observed generation.
+                format: int64
+                type: integer
+              phase:
+                description: Phase is the current execution phase.
+                enum:
+                - Pending
+                - Running
+                - Completed
+                - Failed
+                - Paused
+                type: string
+              pullRequestUrl:
+                description: PullRequestURL is the URL of the PR created when task
+                  completed.
+                type: string
+              recentIterations:
+                description: RecentIterations contains the most recent iteration results.
+                items:
+                  description: IterationResult captures the outcome of a single iteration.
+                  properties:
+                    completedAt:
+                      description: CompletedAt is when this iteration completed.
+                      format: date-time
+                      type: string
+                    error:
+                      description: Error message if the iteration failed.
+                      type: string
+                    iteration:
+                      description: Iteration number (1-based).
+                      format: int32
+                      type: integer
+                    learnings:
+                      description: Learnings captured during this iteration.
+                      type: string
+                    passed:
+                      description: Passed indicates if the task passed quality gates.
+                      type: boolean
+                    startedAt:
+                      description: StartedAt is when this iteration started.
+                      format: date-time
+                      type: string
+                    taskId:
+                      description: TaskID is the ID of the task that was attempted.
+                      type: string
+                    taskTitle:
+                      description: TaskTitle is the title of the task that was attempted.
+                      type: string
+                  required:
+                  - iteration
+                  - passed
+                  - startedAt
+                  type: object
+                maxItems: 10
+                type: array
+              repositoryUrl:
+                description: RepositoryURL is the URL of the Git repository being
+                  used.
+                type: string
+              startedAt:
+                description: StartedAt is when the task execution started.
+                format: date-time
+                type: string
+              totalTasks:
+                description: TotalTasks is the total number of tasks in the PRD.
+                format: int32
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
