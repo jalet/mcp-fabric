@@ -249,3 +249,6 @@ mise-oci/
 # mise install/cache dirs if ever materialized in-repo
 .mise/cache/
 .mise.cache/
+
+# Intermediate diagram render (webp is committed; png is regenerated)
+docs/architecture-diagram.png

@@ -3,6 +3,14 @@
 MCP Fabric is a Kubernetes-native platform for deploying AI agents
 declaratively.
 
+![MCP Fabric architecture](architecture-diagram.webp)
+
+> The diagram above is generated from
+> [`architecture-diagram.py`](architecture-diagram.py) (draw.io source:
+> `architecture-diagram.drawio`). Regenerate it after architecture changes with
+> `python3 docs/architecture-diagram.py`, then
+> `cwebp -q 90 docs/architecture-diagram.png -o docs/architecture-diagram.webp`.
+>
 > Rendered Mermaid diagrams (system overview, CRD relationships, task
 > orchestration, etc.) live in
 > [diagrams/architecture.md](diagrams/architecture.md).
