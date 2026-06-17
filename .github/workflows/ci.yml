@@ -13,5 +13,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      # mise-action caches its installed tools (go, golangci-lint, rumdl,
+      # shellcheck, controller-gen, ...) by default.
       - uses: jdx/mise-action@v4
+      # Cache the Go module/build caches and golangci-lint cache, which
+      # mise-action does not cover. This is where `mise run ci` spends most of
+      # its time (module downloads, `go test -race`, golangci-lint).
+      - name: Cache Go and lint caches
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+            ~/.cache/golangci-lint
+          key: ${{ runner.os }}-mcpfabric-ci-${{ hashFiles('operator/go.sum', 'gateway/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-mcpfabric-ci-
       - run: mise run ci
