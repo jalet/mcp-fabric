@@ -3,7 +3,7 @@ module github.com/jarsater/mcp-fabric/gateway
 go 1.23.0
 
 require (
-	github.com/fsnotify/fsnotify v1.8.0
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/jarsater/mcp-fabric/pkg/logging v0.0.0
 	github.com/prometheus/client_golang v1.23.2
 	go.uber.org/zap v1.27.0
