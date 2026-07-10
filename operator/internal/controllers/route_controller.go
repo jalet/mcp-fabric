@@ -78,7 +78,7 @@ func (r *RouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			if errors.IsConflict(statusErr) {
 				logger.V(1).Info("Conflict updating Route status, will retry", "name", route.Name)
 				metrics.RecordReconcile(metrics.ControllerRoute, metrics.ResultRequeue, time.Since(startTime).Seconds())
-				return ctrl.Result{Requeue: true}, nil
+				return ctrl.Result{RequeueAfter: requeueDelay}, nil
 			}
 			metrics.RecordReconcile(metrics.ControllerRoute, metrics.ResultError, time.Since(startTime).Seconds())
 			metrics.RecordReconcileError(metrics.ControllerRoute, "status_update")
@@ -118,7 +118,7 @@ func (r *RouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		if errors.IsConflict(err) {
 			logger.V(1).Info("Conflict updating Route status, will retry", "name", route.Name)
 			metrics.RecordReconcile(metrics.ControllerRoute, metrics.ResultRequeue, time.Since(startTime).Seconds())
-			return ctrl.Result{Requeue: true}, nil
+			return ctrl.Result{RequeueAfter: requeueDelay}, nil
 		}
 		metrics.RecordReconcile(metrics.ControllerRoute, metrics.ResultError, time.Since(startTime).Seconds())
 		metrics.RecordReconcileError(metrics.ControllerRoute, "status_update")
