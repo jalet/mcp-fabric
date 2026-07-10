@@ -20,7 +20,7 @@ jobs:
       # mise-action does not cover. This is where `mise run ci` spends most of
       # its time (module downloads, `go test -race`, golangci-lint).
       - name: Cache Go and lint caches
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/go-build
