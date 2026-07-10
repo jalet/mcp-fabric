@@ -79,7 +79,7 @@ func TestReconcile_NotFound(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	if result.Requeue {
+	if result.RequeueAfter != 0 {
 		t.Error("expected no requeue for not found")
 	}
 }
@@ -114,7 +114,7 @@ func TestReconcile_InitializesStatus(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	if !result.Requeue {
+	if result.RequeueAfter == 0 {
 		t.Error("expected requeue after status initialization")
 	}
 
@@ -161,7 +161,7 @@ func TestReconcile_PausedTask(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	if result.Requeue {
+	if result.RequeueAfter != 0 {
 		t.Error("expected no requeue for paused task")
 	}
 
@@ -207,7 +207,7 @@ func TestReconcile_CompletedTaskNoOp(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	if result.Requeue || result.RequeueAfter != 0 {
+	if result.RequeueAfter != 0 {
 		t.Error("expected no requeue for completed task")
 	}
 }
@@ -848,7 +848,7 @@ func TestReconcile_AddsFinalizer(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	if !result.Requeue {
+	if result.RequeueAfter == 0 {
 		t.Error("expected requeue after adding finalizer")
 	}
 
@@ -913,7 +913,7 @@ func TestHandleDeletion_CleansUpResources(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	if result.Requeue || result.RequeueAfter != 0 {
+	if result.RequeueAfter != 0 {
 		t.Error("expected no requeue after successful deletion")
 	}
 
@@ -962,7 +962,7 @@ func TestHandleDeletion_NoFinalizerNoOp(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	if result.Requeue || result.RequeueAfter != 0 {
+	if result.RequeueAfter != 0 {
 		t.Error("expected no requeue when our finalizer not present")
 	}
 
@@ -1026,7 +1026,7 @@ func TestReconcile_DeletionTriggersCleanup(t *testing.T) {
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
-	if result.Requeue || result.RequeueAfter != 0 {
+	if result.RequeueAfter != 0 {
 		t.Error("expected no requeue after deletion cleanup")
 	}
 

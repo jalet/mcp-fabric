@@ -37,6 +37,10 @@ const (
 	defaultOrchestratorName = "task-orchestrator"
 
 	// Requeue intervals
+	// requeueDelay re-runs reconcile promptly after we mutate the object
+	// ourselves (finalizer added, status initialized, conflict retry). It
+	// replaces the deprecated Result{Requeue: true}.
+	requeueDelay        = 1 * time.Second
 	jobPollInterval     = 10 * time.Second
 	failureRequeueDelay = 30 * time.Second
 
@@ -95,7 +99,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		if err := r.Update(ctx, &task); err != nil {
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{Requeue: true}, nil
+		return ctrl.Result{RequeueAfter: requeueDelay}, nil
 	}
 
 	// Initialize status if needed
@@ -107,7 +111,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		if err := r.Status().Update(ctx, &task); err != nil {
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{Requeue: true}, nil
+		return ctrl.Result{RequeueAfter: requeueDelay}, nil
 	}
 
 	// Check if task is paused
@@ -158,7 +162,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 			if err := r.Status().Update(ctx, &task); err != nil {
 				return ctrl.Result{}, err
 			}
-			return ctrl.Result{Requeue: true}, nil
+			return ctrl.Result{RequeueAfter: requeueDelay}, nil
 		}
 	}
 
@@ -174,7 +178,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	switch {
 	case err != nil:
 		metrics.RecordReconcile(metrics.ControllerTask, metrics.ResultError, time.Since(startTime).Seconds())
-	case result.Requeue || result.RequeueAfter > 0:
+	case result.RequeueAfter > 0:
 		metrics.RecordReconcile(metrics.ControllerTask, metrics.ResultRequeue, time.Since(startTime).Seconds())
 	default:
 		metrics.RecordReconcile(metrics.ControllerTask, metrics.ResultSuccess, time.Since(startTime).Seconds())

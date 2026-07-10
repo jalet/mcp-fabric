@@ -18,11 +18,13 @@ lockfile_platforms = ["macos-arm64", "linux-x64"]
 minimum_release_age = "7d"
 
 [tools]
-# go pinned to 1.24.x: satisfies both modules (operator go 1.23, gateway go 1.24)
-# and stays within golangci-lint's supported toolchain (newer Go can panic it).
-"aqua:rvben/rumdl" = "0.2.7"
-go                 = "1.24.13"
-golangci-lint      = "2.5.0"
+# go pinned to 1.26.x: both modules declare `go 1.26.0` (k8s 0.36.x and
+# controller-runtime 0.24.x require it). Keep golangci-lint new enough to build
+# against the targeted Go version - an older golangci-lint refuses to lint code
+# whose go directive exceeds the Go it was built with.
+"aqua:rvben/rumdl" = "0.2.30"
+go                 = "1.26.5"
+golangci-lint      = "2.12.2"
 shellcheck         = "0.11.0"
 # controller-gen has no registry entry; install from source via the go backend.
 "go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "v0.20.0"
