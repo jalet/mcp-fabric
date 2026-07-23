@@ -22,7 +22,7 @@ minimum_release_age = "7d"
 # controller-runtime 0.24.x require it). Keep golangci-lint new enough to build
 # against the targeted Go version - an older golangci-lint refuses to lint code
 # whose go directive exceeds the Go it was built with.
-"aqua:rvben/rumdl" = "0.2.30"
+"aqua:rvben/rumdl" = "0.2.41"
 go                 = "1.26.5"
 golangci-lint      = "2.12.2"
 shellcheck         = "0.11.0"
