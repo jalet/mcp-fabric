@@ -2,6 +2,17 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
   "postUpdateOptions": ["gomodTidy"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "mise itself, pinned in the CI workflow so mise:check cannot drift",
+      "managerFilePatterns": ["/^\\.github/workflows/ci\\.yml$/"],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s+version:\\s*\"?(?<currentValue>[^\"\\s]+)\"?"
+      ],
+      "extractVersion": "^v(?<version>.+)$"
+    }
+  ],
   "packageRules": [
     {
       "matchManagers": ["mise"],
