@@ -10,7 +10,7 @@
       "matchStrings": [
         "#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s+version:\\s*\"?(?<currentValue>[^\"\\s]+)\"?"
       ],
-      "extractVersion": "^v(?<version>.+)$"
+      "extractVersionTemplate": "^v(?<version>.+)$"
     }
   ],
   "packageRules": [
