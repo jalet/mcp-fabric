@@ -24,7 +24,7 @@ jobs:
       - uses: jdx/mise-action@v4
         with:
           # renovate: datasource=github-releases depName=jdx/mise
-          version: 2026.8.0
+          version: 2026.8.1
       # Cache the Go module/build caches and golangci-lint cache, which
       # mise-action does not cover. This is where `mise run ci` spends most of
       # its time (module downloads, `go test -race`, golangci-lint).
