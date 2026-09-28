@@ -21,7 +21,7 @@ jobs:
       # output breaks CI on every open PR at once, with a diff nobody authored. The
       # customManager in renovate.json keeps this current, which turns that class of
       # break into a reviewable PR instead of a surprise.
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           # renovate: datasource=github-releases depName=jdx/mise
           version: 2026.9.14
